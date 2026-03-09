@@ -70,8 +70,8 @@ ssh-pushkey/
 ### Step 7: 公開準備（完了）
 
 - [x] README.md 作成
-- [ ] LICENSE ファイル追加
-- [ ] v1.0.0 タグ・リリース
+- [x] LICENSE ファイル追加
+- [x] v1.0.0 タグ・リリース
 
 ## 検証結果
 
@@ -79,6 +79,16 @@ ssh-pushkey/
 - [x] `go test ./...` — ユニットテスト全4件 PASS
 - [x] `go test -tags=integration ./...` — インテグレーションテスト全4件 PASS（Admin/一般ユーザー両方）
 - [x] `go vet ./...` — 静的解析 OK
+
+### Step 8: Windows OpenSSH ACL準拠（完了 — v1.1.0）
+
+- [x] ACLをディレクトリとファイルの両方に設定
+- [x] ACEを `SYSTEM:(F)` / `Administrators:(F)` / `${env:USERNAME}:(F)` の3つに統一
+- [x] icacls の実行結果を `$LASTEXITCODE` で検証、マーカーでGo側ハンドリング
+- [x] ユーザー向けメッセージを全て英語化（i18n）
+- [x] README英語版作成、日本語版を README_ja.md に分離
+- [x] CI/CD追加（GitLab CI: テスト、GitHub Actions: 自動リリース）
+- [x] v1.1.0 リリース（GitLab + GitHub）
 
 ## リポジトリ
 
