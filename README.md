@@ -6,7 +6,7 @@ Windows OpenSSH サーバー向けの `ssh-copy-id` 代替ツール。
 
 ## インストール
 
-[Releases](https://gitlab.com/kwrkb/ssh-pushkey/-/releases) からバイナリをダウンロード、または:
+[GitLab Releases](https://gitlab.com/kwrkb/ssh-pushkey/-/releases) / [GitHub Releases](https://github.com/kwrkb/ssh-pushkey/releases) からバイナリをダウンロード、または:
 
 ```bash
 go install gitlab.com/kwrkb/ssh-pushkey@latest
