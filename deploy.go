@@ -35,12 +35,11 @@ func buildDeployScript(pubKey string, isAdmin bool) string {
 	// BOMなしUTF-8で追記
 	sb.WriteString("[System.IO.File]::AppendAllText($keyFile, $pubKey + \"`n\", (New-Object System.Text.UTF8Encoding $false))\n")
 
-	// ACL設定
-	if isAdmin {
-		sb.WriteString("icacls $keyFile /inheritance:r /grant 'SYSTEM:(F)' /grant 'Administrators:(F)'\n")
-	} else {
-		sb.WriteString("icacls $keyFile /inheritance:r /grant 'SYSTEM:(F)' /grant \"${env:USERNAME}:(F)\"\n")
-	}
+	// ACL設定（ディレクトリ + ファイル）
+	sb.WriteString("icacls $sshDir /inheritance:r /grant 'SYSTEM:(F)' /grant 'Administrators:(F)' /grant \"${env:USERNAME}:(F)\"\n")
+	sb.WriteString("if ($LASTEXITCODE -ne 0) { Write-Output 'ACL_SET_FAILED'; exit 1 }\n")
+	sb.WriteString("icacls $keyFile /inheritance:r /grant 'SYSTEM:(F)' /grant 'Administrators:(F)' /grant \"${env:USERNAME}:(F)\"\n")
+	sb.WriteString("if ($LASTEXITCODE -ne 0) { Write-Output 'ACL_SET_FAILED'; exit 1 }\n")
 
 	sb.WriteString("Write-Output 'KEY_DEPLOYED'\n")
 
@@ -79,7 +78,9 @@ func useAdminKeyFile(client *ssh.Client) bool {
 		return true
 	}
 
-	fmt.Println("=> administrators_authorized_keys は無効です（ユーザーディレクトリに配置します）")
+	fmt.Println("=> [警告] Administratorsグループのユーザーですが、administrators_authorized_keys が無効です")
+	fmt.Println("=>         sshd_config で Match Group administrators が設定されていない場合、")
+	fmt.Println("=>         ユーザーディレクトリの鍵が認証に使用されない可能性があります")
 	return false
 }
 
@@ -97,6 +98,8 @@ func DeployKey(client *ssh.Client, pubKey string) error {
 	switch {
 	case strings.Contains(result, "KEY_ALREADY_EXISTS"):
 		fmt.Println("=> 鍵は既に登録されています（スキップ）")
+	case strings.Contains(result, "ACL_SET_FAILED"):
+		return fmt.Errorf("ACLの設定に失敗しました")
 	case strings.Contains(result, "KEY_DEPLOYED"):
 		fmt.Println("=> 鍵を正常に配置しました")
 	default:
