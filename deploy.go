@@ -58,7 +58,7 @@ func useAdminKeyFile(client *ssh.Client) bool {
 		return false
 	}
 
-	if strings.TrimSpace(output) != "True" {
+	if !strings.Contains(output, "True") {
 		fmt.Println("=> 一般ユーザーです")
 		return false
 	}
@@ -74,7 +74,7 @@ func useAdminKeyFile(client *ssh.Client) bool {
 		return false
 	}
 
-	if strings.TrimSpace(output) == "True" {
+	if strings.Contains(output, "True") {
 		fmt.Println("=> administrators_authorized_keys が有効です")
 		return true
 	}
