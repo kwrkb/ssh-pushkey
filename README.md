@@ -1,69 +1,71 @@
 # ssh-pushkey
 
-Windows OpenSSH サーバー向けの `ssh-copy-id` 代替ツール。
+[日本語](README_ja.md)
 
-パスワード認証で接続し、公開鍵を自動配置する。Windows 特有の罠（BOM、Admin 分岐、ACL）をすべて処理する。
+An `ssh-copy-id` alternative for Windows OpenSSH servers.
 
-## インストール
+Connects via password authentication and automatically deploys your public key. Handles all Windows-specific pitfalls (BOM, Admin branching, ACL).
 
-[GitLab Releases](https://gitlab.com/kwrkb/ssh-pushkey/-/releases) / [GitHub Releases](https://github.com/kwrkb/ssh-pushkey/releases) からバイナリをダウンロード、または:
+## Installation
+
+Download binaries from [GitLab Releases](https://gitlab.com/kwrkb/ssh-pushkey/-/releases) / [GitHub Releases](https://github.com/kwrkb/ssh-pushkey/releases), or:
 
 ```bash
 go install gitlab.com/kwrkb/ssh-pushkey@latest
 ```
 
-## 使い方
+## Usage
 
 ```bash
 ssh-pushkey user@host
 ```
 
-パスワードを入力すれば、あとは全自動。
+Enter your password and the rest is fully automated.
 
-### オプション
+### Options
 
-| フラグ | デフォルト | 説明 |
-|--------|-----------|------|
-| `-i` | `~/.ssh/id_ed25519.pub` | 公開鍵ファイルのパス |
-| `-p` | `22` | SSH ポート番号 |
-| `--version` | - | バージョン表示 |
+| Flag | Default | Description |
+|------|---------|-------------|
+| `-i` | `~/.ssh/id_ed25519.pub` | Path to the public key file |
+| `-p` | `22` | SSH port number |
+| `--version` | - | Show version |
 
-### 例
+### Examples
 
 ```bash
-# デフォルトの鍵を使用
+# Use the default key
 ssh-pushkey admin@192.168.1.10
 
-# 鍵とポートを指定
+# Specify key and port
 ssh-pushkey -i ~/.ssh/id_rsa.pub -p 2222 user@server
 ```
 
-## 何をしてくれるのか
+## What it does
 
-1. パスワード認証で SSH 接続
-2. Administrators グループかどうかを判定
-3. `sshd_config` で `administrators_authorized_keys` が有効か確認
-4. 適切なファイルに公開鍵を BOM なし UTF-8 で書き込み
-5. `icacls` で ACL を設定
+1. Connects via SSH with password authentication
+2. Detects whether the user is in the Administrators group
+3. Checks if `administrators_authorized_keys` is enabled in `sshd_config`
+4. Writes the public key in BOM-less UTF-8 to the appropriate file
+5. Sets ACL via `icacls`
 
-| ユーザー種別 | 配置先 |
-|-------------|--------|
-| Admin（`administrators_authorized_keys` 有効） | `C:\ProgramData\ssh\administrators_authorized_keys` |
-| Admin（無効）/ 一般ユーザー | `~\.ssh\authorized_keys` |
+| User type | Key destination |
+|-----------|-----------------|
+| Admin (`administrators_authorized_keys` enabled) | `C:\ProgramData\ssh\administrators_authorized_keys` |
+| Admin (disabled) / Regular user | `~\.ssh\authorized_keys` |
 
-## ビルド
+## Build
 
 ```bash
 go build -ldflags "-X main.version=1.0.0" -o ssh-pushkey
 ```
 
-## テスト
+## Test
 
 ```bash
-# ユニットテスト
+# Unit tests
 go test ./...
 
-# インテグレーションテスト（実機接続）
+# Integration tests (requires a real Windows host)
 export SSH_TEST_HOST=192.168.1.10
 export SSH_TEST_USER=user
 read -rs SSH_TEST_PASSWORD && export SSH_TEST_PASSWORD
