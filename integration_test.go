@@ -28,7 +28,7 @@ func loadTestEnv(t *testing.T) testEnv {
 	password := os.Getenv("SSH_TEST_PASSWORD")
 
 	if host == "" || user == "" || password == "" {
-		t.Skip("SSH_TEST_HOST, SSH_TEST_USER, SSH_TEST_PASSWORD が必要です")
+		t.Skip("SSH_TEST_HOST, SSH_TEST_USER, SSH_TEST_PASSWORD are required")
 	}
 
 	port := 22
@@ -36,7 +36,7 @@ func loadTestEnv(t *testing.T) testEnv {
 		var err error
 		port, err = strconv.Atoi(p)
 		if err != nil {
-			t.Fatalf("SSH_TEST_PORT が不正です: %s", p)
+			t.Fatalf("invalid SSH_TEST_PORT: %s", p)
 		}
 	}
 
@@ -48,7 +48,7 @@ func TestIntegration_SSHConnect(t *testing.T) {
 
 	client, err := dialSSH(env.user, env.host, env.port, env.password)
 	if err != nil {
-		t.Fatalf("SSH接続に失敗: %v", err)
+		t.Fatalf("SSH connection failed: %v", err)
 	}
 	defer client.Close()
 }
@@ -58,14 +58,14 @@ func TestIntegration_RemotePowerShell(t *testing.T) {
 
 	client, err := dialSSH(env.user, env.host, env.port, env.password)
 	if err != nil {
-		t.Fatalf("SSH接続に失敗: %v", err)
+		t.Fatalf("SSH connection failed: %v", err)
 	}
 	defer client.Close()
 
 	// 変数展開が正しく動くことを確認（-EncodedCommandの検証）
 	output, err := runRemotePowerShell(client, "$x = 'hello'; Write-Output $x")
 	if err != nil {
-		t.Fatalf("PowerShell実行に失敗: %v", err)
+		t.Fatalf("PowerShell execution failed: %v", err)
 	}
 
 	// PowerShellはモジュール初期化時にCLIXMLプログレスを出力することがある
@@ -79,7 +79,7 @@ func TestIntegration_AdminDetection(t *testing.T) {
 
 	client, err := dialSSH(env.user, env.host, env.port, env.password)
 	if err != nil {
-		t.Fatalf("SSH接続に失敗: %v", err)
+		t.Fatalf("SSH connection failed: %v", err)
 	}
 	defer client.Close()
 
@@ -98,22 +98,22 @@ func TestIntegration_DeployKey(t *testing.T) {
 
 	pubKey, err := readPubKey(pubKeyPath)
 	if err != nil {
-		t.Fatalf("公開鍵読み込みに失敗: %v", err)
+		t.Fatalf("failed to read public key: %v", err)
 	}
 
 	client, err := dialSSH(env.user, env.host, env.port, env.password)
 	if err != nil {
-		t.Fatalf("SSH接続に失敗: %v", err)
+		t.Fatalf("SSH connection failed: %v", err)
 	}
 	defer client.Close()
 
 	if err := DeployKey(client, pubKey); err != nil {
-		t.Fatalf("鍵の配置に失敗: %v", err)
+		t.Fatalf("key deployment failed: %v", err)
 	}
 
 	// 2回目は重複スキップされることを確認
 	if err := DeployKey(client, pubKey); err != nil {
-		t.Fatalf("2回目の配置に失敗: %v", err)
+		t.Fatalf("second deployment failed: %v", err)
 	}
 }
 

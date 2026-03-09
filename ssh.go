@@ -44,13 +44,13 @@ func runRemotePowerShell(client *ssh.Client, script string) (string, error) {
 func runRemoteCommand(client *ssh.Client, command string) (string, error) {
 	session, err := client.NewSession()
 	if err != nil {
-		return "", fmt.Errorf("セッション作成に失敗: %w", err)
+		return "", fmt.Errorf("failed to create session: %w", err)
 	}
 	defer session.Close()
 
 	output, err := session.CombinedOutput(command)
 	if err != nil {
-		return string(output), fmt.Errorf("コマンド実行に失敗: %w\noutput: %s", err, output)
+		return string(output), fmt.Errorf("command execution failed: %w\noutput: %s", err, output)
 	}
 	return string(output), nil
 }
