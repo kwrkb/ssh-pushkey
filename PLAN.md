@@ -57,10 +57,27 @@ ssh-pushkey/
 - [x] 重複チェックロジックの存在確認
 - [x] ErrorActionPreference設定の確認
 
+### Step 6: インテグレーションテスト（完了）
+
+- [x] `integration_test.go` — build tag `integration` で分離
+- [x] SSH接続テスト（`TestIntegration_SSHConnect`）
+- [x] PowerShellリモート実行テスト（`TestIntegration_RemotePowerShell`）
+- [x] Admin判定テスト（`TestIntegration_AdminDetection`）
+- [x] 鍵配置E2Eテスト（`TestIntegration_DeployKey`）— 重複スキップ含む
+- [x] Adminユーザー（kiwar）で全テストPASS
+- [x] 一般ユーザー（testuser）で全テストPASS
+
+### Step 7: 公開準備（完了）
+
+- [x] README.md 作成
+- [ ] LICENSE ファイル追加
+- [ ] v1.0.0 タグ・リリース
+
 ## 検証結果
 
 - [x] `go build` — 正常ビルド確認
-- [x] `go test ./...` — 全4テスト PASS
+- [x] `go test ./...` — ユニットテスト全4件 PASS
+- [x] `go test -tags=integration ./...` — インテグレーションテスト全4件 PASS（Admin/一般ユーザー両方）
 - [x] `go vet ./...` — 静的解析 OK
 
 ## リポジトリ
