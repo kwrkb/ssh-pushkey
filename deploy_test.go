@@ -79,8 +79,8 @@ func TestBuildDeployScript_AclValidation(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			script := buildDeployScript(pubKey, isAdmin)
-			if !strings.Contains(script, "ACL_SET_FAILED") {
-				t.Errorf("script should contain ACL_SET_FAILED marker\n\nscript:\n%s", script)
+			if !strings.Contains(script, "ACL_SET_FAILED_DIR") || !strings.Contains(script, "ACL_SET_FAILED_FILE") {
+				t.Errorf("script should contain ACL_SET_FAILED_DIR and ACL_SET_FAILED_FILE markers\n\nscript:\n%s", script)
 			}
 		})
 	}

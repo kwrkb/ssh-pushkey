@@ -37,9 +37,9 @@ func buildDeployScript(pubKey string, isAdmin bool) string {
 
 	// ACL設定（ディレクトリ + ファイル）
 	sb.WriteString("icacls $sshDir /inheritance:r /grant 'SYSTEM:(F)' /grant 'Administrators:(F)' /grant \"${env:USERNAME}:(F)\"\n")
-	sb.WriteString("if ($LASTEXITCODE -ne 0) { Write-Output 'ACL_SET_FAILED'; exit 1 }\n")
+	sb.WriteString("if ($LASTEXITCODE -ne 0) { Write-Output 'ACL_SET_FAILED_DIR'; exit 1 }\n")
 	sb.WriteString("icacls $keyFile /inheritance:r /grant 'SYSTEM:(F)' /grant 'Administrators:(F)' /grant \"${env:USERNAME}:(F)\"\n")
-	sb.WriteString("if ($LASTEXITCODE -ne 0) { Write-Output 'ACL_SET_FAILED'; exit 1 }\n")
+	sb.WriteString("if ($LASTEXITCODE -ne 0) { Write-Output 'ACL_SET_FAILED_FILE'; exit 1 }\n")
 
 	sb.WriteString("Write-Output 'KEY_DEPLOYED'\n")
 
@@ -90,16 +90,18 @@ func DeployKey(client *ssh.Client, pubKey string) error {
 	fmt.Println("=> 公開鍵を配置中...")
 	script := buildDeployScript(pubKey, isAdmin)
 	output, err := runRemotePowerShell(client, script)
-	if err != nil {
-		return fmt.Errorf("鍵の配置に失敗: %w", err)
-	}
-
 	result := strings.TrimSpace(output)
+
+	// exit 1 でエラーが返る場合もマーカーを優先チェック
 	switch {
+	case strings.Contains(result, "ACL_SET_FAILED_DIR"):
+		return fmt.Errorf("ディレクトリのACL設定に失敗しました")
+	case strings.Contains(result, "ACL_SET_FAILED_FILE"):
+		return fmt.Errorf("鍵ファイルのACL設定に失敗しました")
+	case err != nil:
+		return fmt.Errorf("鍵の配置に失敗: %w", err)
 	case strings.Contains(result, "KEY_ALREADY_EXISTS"):
 		fmt.Println("=> 鍵は既に登録されています（スキップ）")
-	case strings.Contains(result, "ACL_SET_FAILED"):
-		return fmt.Errorf("ACLの設定に失敗しました")
 	case strings.Contains(result, "KEY_DEPLOYED"):
 		fmt.Println("=> 鍵を正常に配置しました")
 	default:
