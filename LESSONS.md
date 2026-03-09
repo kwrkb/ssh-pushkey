@@ -42,6 +42,10 @@
 - `gh pr create` はGitHub APIを使うため、GitLabリポジトリでは `Head sha can't be blank` エラーで失敗する。GitHubミラーがあっても実体がGitLabなら `glab` を使う必要がある
 - **ルール**: リモートURLが `gitlab.com` の場合は `glab mr create` を使う。`gh pr create` は使わない
 
+### GitLabリリースは自動作成されない
+- GitHub Actions はタグ push で自動リリース（バイナリ付き）を作成するが、GitLab 側にはリリースが自動作成されない。GitLab はミラー元なのにリリースが欠落する状態になる
+- **ルール**: タグ push 後、`glab release create vX.Y.Z` で GitLab リリースも手動作成する。GitHub Actions の完了を待つ必要はない（並行して作成可能）
+
 ## OSSメッセージの国際化 (2026-03-10)
 
 ### ユーザー向けメッセージは英語にする
