@@ -35,12 +35,11 @@ func buildDeployScript(pubKey string, isAdmin bool) string {
 	// BOMなしUTF-8で追記
 	sb.WriteString("[System.IO.File]::AppendAllText($keyFile, $pubKey + \"`n\", (New-Object System.Text.UTF8Encoding $false))\n")
 
-	// ACL設定
-	if isAdmin {
-		sb.WriteString("icacls $keyFile /inheritance:r /grant 'SYSTEM:(F)' /grant 'Administrators:(F)'\n")
-	} else {
-		sb.WriteString("icacls $keyFile /inheritance:r /grant 'SYSTEM:(F)' /grant \"${env:USERNAME}:(F)\"\n")
-	}
+	// ACL設定（ディレクトリ + ファイル）
+	sb.WriteString("icacls $sshDir /inheritance:r /grant 'SYSTEM:(F)' /grant 'Administrators:(F)' /grant \"${env:USERNAME}:(F)\"\n")
+	sb.WriteString("if ($LASTEXITCODE -ne 0) { Write-Output 'ACL_SET_FAILED_DIR'; exit 1 }\n")
+	sb.WriteString("icacls $keyFile /inheritance:r /grant 'SYSTEM:(F)' /grant 'Administrators:(F)' /grant \"${env:USERNAME}:(F)\"\n")
+	sb.WriteString("if ($LASTEXITCODE -ne 0) { Write-Output 'ACL_SET_FAILED_FILE'; exit 1 }\n")
 
 	sb.WriteString("Write-Output 'KEY_DEPLOYED'\n")
 
@@ -50,57 +49,63 @@ func buildDeployScript(pubKey string, isAdmin bool) string {
 // useAdminKeyFile はAdminユーザーかつsshd_configでadministrators_authorized_keysが有効かを判定する
 func useAdminKeyFile(client *ssh.Client) bool {
 	// Step 1: Administratorsグループ判定
-	fmt.Println("=> Administratorsグループを確認中...")
+	fmt.Println("=> Checking Administrators group...")
 	checkScript := "$id = [System.Security.Principal.WindowsIdentity]::GetCurrent(); $principal = New-Object System.Security.Principal.WindowsPrincipal($id); $principal.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)"
 	output, err := runRemotePowerShell(client, checkScript)
 	if err != nil {
-		fmt.Printf("=> Admin判定をスキップ（エラー: %v）\n", err)
+		fmt.Printf("=> Skipping admin check (error: %v)\n", err)
 		return false
 	}
 
 	if !strings.Contains(output, "True") {
-		fmt.Println("=> 一般ユーザーです")
+		fmt.Println("=> Standard user detected")
 		return false
 	}
-	fmt.Println("=> Administratorsグループのユーザーです")
+	fmt.Println("=> User is in Administrators group")
 
 	// Step 2: sshd_configでadministrators_authorized_keysが有効か確認
-	fmt.Println("=> sshd_config を確認中...")
+	fmt.Println("=> Checking sshd_config...")
 	// Match Group administrators の行がコメントアウトされていなければ有効
 	sshdScript := `Select-String -Path C:\ProgramData\ssh\sshd_config -Pattern '^\s*Match\s+Group\s+administrators' -Quiet`
 	output, err = runRemotePowerShell(client, sshdScript)
 	if err != nil {
-		fmt.Println("=> sshd_config の確認をスキップ（ユーザーディレクトリに配置します）")
+		fmt.Println("=> Skipping sshd_config check, deploying to user directory")
 		return false
 	}
 
 	if strings.Contains(output, "True") {
-		fmt.Println("=> administrators_authorized_keys が有効です")
+		fmt.Println("=> administrators_authorized_keys is enabled")
 		return true
 	}
 
-	fmt.Println("=> administrators_authorized_keys は無効です（ユーザーディレクトリに配置します）")
+	fmt.Println("=> [WARNING] User is in Administrators group but administrators_authorized_keys is disabled")
+	fmt.Println("=>           If 'Match Group administrators' is not set in sshd_config,")
+	fmt.Println("=>           user directory keys may not be used for authentication")
 	return false
 }
 
 func DeployKey(client *ssh.Client, pubKey string) error {
 	isAdmin := useAdminKeyFile(client)
 
-	fmt.Println("=> 公開鍵を配置中...")
+	fmt.Println("=> Deploying public key...")
 	script := buildDeployScript(pubKey, isAdmin)
 	output, err := runRemotePowerShell(client, script)
-	if err != nil {
-		return fmt.Errorf("鍵の配置に失敗: %w", err)
-	}
-
 	result := strings.TrimSpace(output)
+
+	// exit 1 でエラーが返る場合もマーカーを優先チェック
 	switch {
+	case strings.Contains(result, "ACL_SET_FAILED_DIR"):
+		return fmt.Errorf("failed to set directory ACL")
+	case strings.Contains(result, "ACL_SET_FAILED_FILE"):
+		return fmt.Errorf("failed to set key file ACL")
+	case err != nil:
+		return fmt.Errorf("key deployment failed: %w", err)
 	case strings.Contains(result, "KEY_ALREADY_EXISTS"):
-		fmt.Println("=> 鍵は既に登録されています（スキップ）")
+		fmt.Println("=> Key already exists, skipping")
 	case strings.Contains(result, "KEY_DEPLOYED"):
-		fmt.Println("=> 鍵を正常に配置しました")
+		fmt.Println("=> Key deployed successfully")
 	default:
-		fmt.Printf("=> 出力: %s\n", result)
+		fmt.Printf("=> Output: %s\n", result)
 	}
 
 	return nil

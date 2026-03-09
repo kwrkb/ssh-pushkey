@@ -13,9 +13,9 @@ import (
 var version = "dev"
 
 func main() {
-	keyPath := flag.String("i", defaultPubKeyPath(), "公開鍵ファイルのパス")
-	port := flag.Int("p", 22, "SSHポート番号")
-	showVersion := flag.Bool("version", false, "バージョンを表示")
+	keyPath := flag.String("i", defaultPubKeyPath(), "path to public key file")
+	port := flag.Int("p", 22, "SSH port number")
+	showVersion := flag.Bool("version", false, "show version")
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: ssh-pushkey [-i identity_file] [-p port] user@host\n\n")
 		flag.PrintDefaults()
@@ -44,9 +44,9 @@ func main() {
 		os.Exit(1)
 	}
 
-	fmt.Printf("=> 公開鍵を読み込みました: %s\n", *keyPath)
+	fmt.Printf("=> Public key loaded: %s\n", *keyPath)
 
-	fmt.Printf("=> %s@%s:%d に接続します...\n", user, host, *port)
+	fmt.Printf("=> Connecting to %s@%s:%d...\n", user, host, *port)
 	password, err := promptPassword(fmt.Sprintf("%s@%s's password: ", user, host))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -55,18 +55,18 @@ func main() {
 
 	client, err := dialSSH(user, host, *port, password)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: SSH接続に失敗しました: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Error: SSH connection failed: %v\n", err)
 		os.Exit(1)
 	}
 	defer client.Close()
-	fmt.Println("=> SSH接続に成功しました")
+	fmt.Println("=> SSH connection established")
 
 	if err := DeployKey(client, pubKey); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: 鍵の配置に失敗しました: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Error: key deployment failed: %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Println("=> 公開鍵の配置が完了しました！")
+	fmt.Println("=> Key deployment completed!")
 }
 
 func defaultPubKeyPath() string {
@@ -88,15 +88,15 @@ func parseTarget(target string) (user, host string, err error) {
 func readPubKey(path string) (string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return "", fmt.Errorf("公開鍵ファイルを読み込めません: %w", err)
+		return "", fmt.Errorf("cannot read public key file: %w", err)
 	}
 	key := strings.TrimSpace(string(data))
 	if key == "" {
-		return "", fmt.Errorf("公開鍵ファイルが空です: %s", path)
+		return "", fmt.Errorf("public key file is empty: %s", path)
 	}
 	parts := strings.Fields(key)
 	if len(parts) < 2 {
-		return "", fmt.Errorf("無効な公開鍵フォーマットです: %s", path)
+		return "", fmt.Errorf("invalid public key format: %s", path)
 	}
 	return key, nil
 }
@@ -106,7 +106,7 @@ func promptPassword(prompt string) (string, error) {
 	password, err := term.ReadPassword(int(os.Stdin.Fd()))
 	fmt.Println()
 	if err != nil {
-		return "", fmt.Errorf("パスワード読み込みに失敗: %w", err)
+		return "", fmt.Errorf("failed to read password: %w", err)
 	}
 	return string(password), nil
 }

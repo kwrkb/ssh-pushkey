@@ -20,8 +20,11 @@ func TestBuildDeployScript_Admin(t *testing.T) {
 		{"AppendAllText", "[System.IO.File]::AppendAllText"},
 		{"icacls SYSTEM", "SYSTEM:(F)"},
 		{"icacls Administrators", "Administrators:(F)"},
+		{"icacls user", "${env:USERNAME}:(F)"},
 		{"duplicate check", "Select-String"},
-		{"inheritance remove", "icacls $keyFile /inheritance:r"},
+		{"inheritance remove keyFile", "icacls $keyFile /inheritance:r"},
+		{"inheritance remove sshDir", "icacls $sshDir /inheritance:r"},
+		{"LASTEXITCODE check", "LASTEXITCODE"},
 	}
 
 	for _, c := range checks {
@@ -46,7 +49,10 @@ func TestBuildDeployScript_NormalUser(t *testing.T) {
 		{"public key present", pubKey},
 		{"BOM-less UTF8", "New-Object System.Text.UTF8Encoding $false"},
 		{"icacls user", "${env:USERNAME}:(F)"},
+		{"icacls Administrators", "Administrators:(F)"},
 		{"duplicate check", "Select-String"},
+		{"inheritance remove sshDir", "icacls $sshDir /inheritance:r"},
+		{"LASTEXITCODE check", "LASTEXITCODE"},
 	}
 
 	for _, c := range checks {
@@ -60,6 +66,23 @@ func TestBuildDeployScript_NormalUser(t *testing.T) {
 	// Admin専用のパスが含まれないことを確認
 	if strings.Contains(script, `C:\ProgramData\ssh\administrators_authorized_keys`) {
 		t.Error("normal user script should not contain admin key path")
+	}
+}
+
+func TestBuildDeployScript_AclValidation(t *testing.T) {
+	pubKey := "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample user@host"
+
+	for _, isAdmin := range []bool{true, false} {
+		name := "normal"
+		if isAdmin {
+			name = "admin"
+		}
+		t.Run(name, func(t *testing.T) {
+			script := buildDeployScript(pubKey, isAdmin)
+			if !strings.Contains(script, "ACL_SET_FAILED_DIR") || !strings.Contains(script, "ACL_SET_FAILED_FILE") {
+				t.Errorf("script should contain ACL_SET_FAILED_DIR and ACL_SET_FAILED_FILE markers\n\nscript:\n%s", script)
+			}
+		})
 	}
 }
 

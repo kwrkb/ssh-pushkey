@@ -23,3 +23,21 @@
 ### CLIXML混入ルールはすべての出力判定に一貫して適用する
 - テストの出力比較は `strings.Contains` に修正済みだったが、`useAdminKeyFile` 内の `IsInRole` / `sshd_config` 判定は `strings.TrimSpace(output) == "True"` のままだった。結果、Adminユーザーが一般ユーザーと誤判定された
 - **ルール**: PowerShellの出力を判定するコードを書く・修正する際は、プロジェクト内の全箇所を検索し、同じパターンの出力比較が残っていないか確認する。1箇所直したら他も直す
+
+## Windows OpenSSH ACL準拠 (2026-03-10)
+
+### ACLはディレクトリとファイルの両方に設定する
+- Windows OpenSSHは `.ssh` ディレクトリと `authorized_keys` ファイルの両方に正しいACLを要求する。ファイルのみに `icacls /inheritance:r` を適用しても、親ディレクトリのACLが不正だと認証に失敗する
+- **ルール**: Windows OpenSSHの鍵配置時は、親ディレクトリ（`$sshDir`）と鍵ファイル（`$keyFile`）の両方に `icacls /inheritance:r` + ACE付与を行う
+
+### ACEはisAdminに関わらず統一する
+- 以前はAdmin時に `SYSTEM:(F)` + `Administrators:(F)` のみ、一般ユーザー時に `SYSTEM:(F)` + `${env:USERNAME}:(F)` のみを付与していた。しかしAdminユーザーでもユーザー個別のACEが必要で、一般ユーザーでもAdministratorsグループのACEが必要
+- **ルール**: ACEは常に `SYSTEM:(F)` / `Administrators:(F)` / `${env:USERNAME}:(F)` の3つを付与する。isAdminで分岐しない
+
+### icacls等の外部コマンドは成否を検証する
+- icaclsの実行結果を検証していなかったため、ACL設定が失敗してもサイレントに成功扱いになっていた
+- **ルール**: PowerShellスクリプト内で外部コマンド（icacls等）を実行した後は `$LASTEXITCODE` をチェックし、失敗時はマーカー文字列を出力してGo側でハンドリングする
+
+### GitLabリポジトリのPRは glab を使う
+- `gh pr create` はGitHub APIを使うため、GitLabリポジトリでは `Head sha can't be blank` エラーで失敗する。GitHubミラーがあっても実体がGitLabなら `glab` を使う必要がある
+- **ルール**: リモートURLが `gitlab.com` の場合は `glab mr create` を使う。`gh pr create` は使わない
