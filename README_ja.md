@@ -4,7 +4,7 @@
 
 Windows OpenSSH サーバー向けの `ssh-copy-id` 代替ツール。
 
-パスワード認証で接続し、公開鍵を自動配置する。Windows 特有の罠（BOM、Admin 分岐、ACL）をすべて処理する。
+パスワード認証で接続し、公開鍵を自動配置する。Windows 特有の罠（BOM、Admin 分岐、ACL）をすべて処理する。`.ssh` ディレクトリと鍵ファイルの両方に適切な ACL を設定する。
 
 ## インストール
 
@@ -46,7 +46,7 @@ ssh-pushkey -i ~/.ssh/id_rsa.pub -p 2222 user@server
 2. Administrators グループかどうかを判定
 3. `sshd_config` で `administrators_authorized_keys` が有効か確認
 4. 適切なファイルに公開鍵を BOM なし UTF-8 で書き込み
-5. `icacls` で ACL を設定
+5. `.ssh` ディレクトリと鍵ファイルの両方に `icacls` で ACL を設定（`SYSTEM:(F)`、`Administrators:(F)`、`User:(F)`）
 
 | ユーザー種別 | 配置先 |
 |-------------|--------|
@@ -56,7 +56,7 @@ ssh-pushkey -i ~/.ssh/id_rsa.pub -p 2222 user@server
 ## ビルド
 
 ```bash
-go build -ldflags "-X main.version=1.0.0" -o ssh-pushkey
+go build -ldflags "-X main.version=1.1.0" -o ssh-pushkey
 ```
 
 ## テスト

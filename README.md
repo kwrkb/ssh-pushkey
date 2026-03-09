@@ -4,7 +4,7 @@
 
 An `ssh-copy-id` alternative for Windows OpenSSH servers.
 
-Connects via password authentication and automatically deploys your public key. Handles all Windows-specific pitfalls (BOM, Admin branching, ACL).
+Connects via password authentication and automatically deploys your public key. Handles all Windows-specific pitfalls (BOM, Admin branching, ACL). Sets proper ACL on both the `.ssh` directory and key file.
 
 ## Installation
 
@@ -46,7 +46,7 @@ ssh-pushkey -i ~/.ssh/id_rsa.pub -p 2222 user@server
 2. Detects whether the user is in the Administrators group
 3. Checks if `administrators_authorized_keys` is enabled in `sshd_config`
 4. Writes the public key in BOM-less UTF-8 to the appropriate file
-5. Sets ACL via `icacls`
+5. Sets ACL on both the `.ssh` directory and key file via `icacls` (`SYSTEM:(F)`, `Administrators:(F)`, `User:(F)`)
 
 | User type | Key destination |
 |-----------|-----------------|
@@ -56,7 +56,7 @@ ssh-pushkey -i ~/.ssh/id_rsa.pub -p 2222 user@server
 ## Build
 
 ```bash
-go build -ldflags "-X main.version=1.0.0" -o ssh-pushkey
+go build -ldflags "-X main.version=1.1.0" -o ssh-pushkey
 ```
 
 ## Test
