@@ -5,6 +5,7 @@ package main
 import (
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -67,8 +68,9 @@ func TestIntegration_RemotePowerShell(t *testing.T) {
 		t.Fatalf("PowerShell実行に失敗: %v", err)
 	}
 
-	if got := trimOutput(output); got != "hello" {
-		t.Errorf("got %q, want %q", got, "hello")
+	// PowerShellはモジュール初期化時にCLIXMLプログレスを出力することがある
+	if !strings.Contains(output, "hello") {
+		t.Errorf("output should contain %q, got %q", "hello", output)
 	}
 }
 
