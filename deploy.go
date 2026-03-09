@@ -28,7 +28,7 @@ func buildDeployScript(pubKey string, isAdmin bool) string {
 
 	// 重複チェック
 	sb.WriteString("if (Test-Path $keyFile) {\n")
-	sb.WriteString("  $existing = Select-String -Path $keyFile -Pattern ([regex]::Escape($pubKey)) -SimpleMatch -Quiet\n")
+	sb.WriteString("  $existing = Select-String -Path $keyFile -Pattern $pubKey -SimpleMatch -Quiet\n")
 	sb.WriteString("  if ($existing) { Write-Output 'KEY_ALREADY_EXISTS'; exit 0 }\n")
 	sb.WriteString("}\n")
 
