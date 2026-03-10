@@ -132,24 +132,14 @@ func readLineFromTerminal() (string, error) {
 	tty, err := os.Open("/dev/tty")
 	if err != nil {
 		// /dev/ttyが使えない場合（Windows等）はStdinにフォールバック
-		var buf [256]byte
-		n, err := os.Stdin.Read(buf[:])
-		if err != nil {
-			return "", err
-		}
-		return string(buf[:n-1]), nil // trim newline
+		return readLineFrom(os.Stdin)
 	}
 	defer tty.Close()
 
 	oldState, err := term.MakeRaw(int(tty.Fd()))
 	if err != nil {
 		// rawモードにできない場合はそのまま読む
-		var buf [256]byte
-		n, readErr := tty.Read(buf[:])
-		if readErr != nil {
-			return "", readErr
-		}
-		return string(buf[:n-1]), nil
+		return readLineFrom(tty)
 	}
 	defer term.Restore(int(tty.Fd()), oldState)
 
@@ -161,11 +151,30 @@ func readLineFromTerminal() (string, error) {
 			break
 		}
 		if b[0] == '\r' || b[0] == '\n' {
-			fmt.Fprint(os.Stderr, "\n")
+			fmt.Println()
 			break
 		}
 		result = append(result, b[0])
-		fmt.Fprintf(os.Stderr, "%c", b[0])
+		fmt.Printf("%c", b[0])
+	}
+	return string(result), nil
+}
+
+// readLineFrom はリーダーから改行までの1行を読み取る。
+func readLineFrom(r *os.File) (string, error) {
+	var result []byte
+	var b [1]byte
+	for {
+		n, err := r.Read(b[:])
+		if n > 0 {
+			if b[0] == '\r' || b[0] == '\n' {
+				break
+			}
+			result = append(result, b[0])
+		}
+		if err != nil {
+			break
+		}
 	}
 	return string(result), nil
 }
