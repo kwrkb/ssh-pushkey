@@ -15,9 +15,10 @@ var version = "dev"
 func main() {
 	keyPath := flag.String("i", defaultPubKeyPath(), "path to public key file")
 	port := flag.Int("p", 22, "SSH port number")
+	insecure := flag.Bool("insecure", false, "skip host key verification (vulnerable to MITM)")
 	showVersion := flag.Bool("version", false, "show version")
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: ssh-pushkey [-i identity_file] [-p port] user@host\n\n")
+		fmt.Fprintf(os.Stderr, "Usage: ssh-pushkey [-i identity_file] [-p port] [--insecure] user@host\n\n")
 		flag.PrintDefaults()
 	}
 	flag.Parse()
@@ -53,7 +54,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	client, err := dialSSH(user, host, *port, password)
+	client, err := dialSSH(user, host, *port, password, *insecure)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: SSH connection failed: %v\n", err)
 		os.Exit(1)

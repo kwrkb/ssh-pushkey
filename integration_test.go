@@ -46,7 +46,7 @@ func loadTestEnv(t *testing.T) testEnv {
 func TestIntegration_SSHConnect(t *testing.T) {
 	env := loadTestEnv(t)
 
-	client, err := dialSSH(env.user, env.host, env.port, env.password)
+	client, err := dialSSH(env.user, env.host, env.port, env.password, true)
 	if err != nil {
 		t.Fatalf("SSH connection failed: %v", err)
 	}
@@ -56,7 +56,7 @@ func TestIntegration_SSHConnect(t *testing.T) {
 func TestIntegration_RemotePowerShell(t *testing.T) {
 	env := loadTestEnv(t)
 
-	client, err := dialSSH(env.user, env.host, env.port, env.password)
+	client, err := dialSSH(env.user, env.host, env.port, env.password, true)
 	if err != nil {
 		t.Fatalf("SSH connection failed: %v", err)
 	}
@@ -77,7 +77,7 @@ func TestIntegration_RemotePowerShell(t *testing.T) {
 func TestIntegration_AdminDetection(t *testing.T) {
 	env := loadTestEnv(t)
 
-	client, err := dialSSH(env.user, env.host, env.port, env.password)
+	client, err := dialSSH(env.user, env.host, env.port, env.password, true)
 	if err != nil {
 		t.Fatalf("SSH connection failed: %v", err)
 	}
@@ -101,7 +101,7 @@ func TestIntegration_DeployKey(t *testing.T) {
 		t.Fatalf("failed to read public key: %v", err)
 	}
 
-	client, err := dialSSH(env.user, env.host, env.port, env.password)
+	client, err := dialSSH(env.user, env.host, env.port, env.password, true)
 	if err != nil {
 		t.Fatalf("SSH connection failed: %v", err)
 	}

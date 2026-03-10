@@ -35,10 +35,14 @@ func buildDeployScript(pubKey string, isAdmin bool) string {
 	// BOMなしUTF-8で追記
 	sb.WriteString("[System.IO.File]::AppendAllText($keyFile, $pubKey + \"`n\", (New-Object System.Text.UTF8Encoding $false))\n")
 
-	// ACL設定（ディレクトリ + ファイル）
-	sb.WriteString("icacls $sshDir /inheritance:r /grant 'SYSTEM:(F)' /grant 'Administrators:(F)' /grant \"${env:USERNAME}:(F)\"\n")
+	// ACL設定（SIDベース：言語非依存）
+	// S-1-5-18 = NT AUTHORITY\SYSTEM
+	// S-1-5-32-544 = BUILTIN\Administrators
+	// ユーザーSIDは動的に取得
+	sb.WriteString("$userSid = ([System.Security.Principal.WindowsIdentity]::GetCurrent()).User.Value\n")
+	sb.WriteString("icacls $sshDir /inheritance:r /grant '*S-1-5-18:(F)' /grant '*S-1-5-32-544:(F)' /grant \"*${userSid}:(F)\"\n")
 	sb.WriteString("if ($LASTEXITCODE -ne 0) { Write-Output 'ACL_SET_FAILED_DIR'; exit 1 }\n")
-	sb.WriteString("icacls $keyFile /inheritance:r /grant 'SYSTEM:(F)' /grant 'Administrators:(F)' /grant \"${env:USERNAME}:(F)\"\n")
+	sb.WriteString("icacls $keyFile /inheritance:r /grant '*S-1-5-18:(F)' /grant '*S-1-5-32-544:(F)' /grant \"*${userSid}:(F)\"\n")
 	sb.WriteString("if ($LASTEXITCODE -ne 0) { Write-Output 'ACL_SET_FAILED_FILE'; exit 1 }\n")
 
 	sb.WriteString("Write-Output 'KEY_DEPLOYED'\n")
@@ -63,19 +67,56 @@ func useAdminKeyFile(client *ssh.Client) bool {
 	}
 	fmt.Println("=> User is in Administrators group")
 
-	// Step 2: sshd_configでadministrators_authorized_keysが有効か確認
+	// Step 2: sshd_configのMatch Group administratorsブロック内のAuthorizedKeysFileを検証
 	fmt.Println("=> Checking sshd_config...")
-	// Match Group administrators の行がコメントアウトされていなければ有効
-	sshdScript := `Select-String -Path C:\ProgramData\ssh\sshd_config -Pattern '^\s*Match\s+Group\s+administrators' -Quiet`
+	// Match Group administrators ブロックを抽出し、その中の AuthorizedKeysFile が
+	// administrators_authorized_keys を指しているか確認する
+	sshdScript := `
+$configPath = 'C:\ProgramData\ssh\sshd_config'
+if (-not (Test-Path $configPath)) { Write-Output 'NO_CONFIG'; exit 0 }
+$lines = Get-Content $configPath
+$inMatchBlock = $false
+$foundAuthKeysFile = $false
+foreach ($line in $lines) {
+    $trimmed = $line.Trim()
+    if ($trimmed -match '(?i)^\s*Match\s+Group\s+administrators\s*(#.*)?$') {
+        $inMatchBlock = $true
+        continue
+    }
+    if ($inMatchBlock) {
+        if ($trimmed -match '(?i)^\s*Match\s') { break }
+        if ($trimmed -match '(?i)^\s*AuthorizedKeysFile\s+(.+)') {
+            $val = $Matches[1].Trim()
+            if ($val -like '*administrators_authorized_keys*') {
+                $foundAuthKeysFile = $true
+            }
+            break
+        }
+    }
+}
+if ($inMatchBlock -and $foundAuthKeysFile) {
+    Write-Output 'ADMIN_KEYS_ENABLED'
+} elseif ($inMatchBlock) {
+    Write-Output 'MATCH_BLOCK_NO_ADMIN_KEYS'
+} else {
+    Write-Output 'NO_MATCH_BLOCK'
+}`
 	output, err = runRemotePowerShell(client, sshdScript)
 	if err != nil {
 		fmt.Println("=> Skipping sshd_config check, deploying to user directory")
 		return false
 	}
 
-	if strings.Contains(output, "True") {
+	if strings.Contains(output, "ADMIN_KEYS_ENABLED") {
 		fmt.Println("=> administrators_authorized_keys is enabled")
 		return true
+	}
+
+	if strings.Contains(output, "MATCH_BLOCK_NO_ADMIN_KEYS") {
+		fmt.Println("=> [WARNING] Match Group administrators block exists but AuthorizedKeysFile")
+		fmt.Println("=>           does not point to administrators_authorized_keys")
+		fmt.Println("=>           Deploying to user directory instead")
+		return false
 	}
 
 	fmt.Println("=> [WARNING] User is in Administrators group but administrators_authorized_keys is disabled")
