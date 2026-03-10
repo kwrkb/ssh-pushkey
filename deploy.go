@@ -79,13 +79,13 @@ $inMatchBlock = $false
 $foundAuthKeysFile = $false
 foreach ($line in $lines) {
     $trimmed = $line.Trim()
-    if ($trimmed -match '^\s*Match\s+Group\s+administrators\s*$') {
+    if ($trimmed -match '(?i)^\s*Match\s+Group\s+administrators\s*(#.*)?$') {
         $inMatchBlock = $true
         continue
     }
     if ($inMatchBlock) {
-        if ($trimmed -match '^\s*Match\s') { break }
-        if ($trimmed -match '^\s*AuthorizedKeysFile\s+(.+)') {
+        if ($trimmed -match '(?i)^\s*Match\s') { break }
+        if ($trimmed -match '(?i)^\s*AuthorizedKeysFile\s+(.+)') {
             $val = $Matches[1].Trim()
             if ($val -like '*administrators_authorized_keys*') {
                 $foundAuthKeysFile = $true
