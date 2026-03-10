@@ -35,12 +35,19 @@ func dialSSH(user, host string, port int, password string, insecure bool) (*ssh.
 		Auth: []ssh.AuthMethod{
 			ssh.Password(password),
 		},
-		HostKeyCallback:  hostKeyCallback,
+		HostKeyCallback:   hostKeyCallback,
 		HostKeyAlgorithms: hostKeyAlgorithms,
 	}
 
 	addr := fmt.Sprintf("%s:%d", host, port)
-	return ssh.Dial("tcp", addr, config)
+	client, err := ssh.Dial("tcp", addr, config)
+	if err != nil && len(hostKeyAlgorithms) > 0 {
+		// HostKeyAlgorithmsの制限によりハンドシェイクが失敗した場合、
+		// 制限を外してリトライし、HostKeyCallbackのインタラクティブ更新に委ねる。
+		config.HostKeyAlgorithms = nil
+		return ssh.Dial("tcp", addr, config)
+	}
+	return client, err
 }
 
 // createHostKeyCallback はknown_hostsファイルを使用したホスト鍵検証コールバックを作成する。
@@ -203,16 +210,20 @@ func replaceHostKeyInKnownHosts(knownHostsPath string, addr string, newKey ssh.P
 			continue
 		}
 		hosts := strings.Split(fields[0], ",")
-		match := false
+		var remaining []string
 		for _, h := range hosts {
-			if h == addr {
-				match = true
-				break
+			if h != addr {
+				remaining = append(remaining, h)
 			}
 		}
-		if !match {
+		if len(remaining) == len(hosts) {
+			// addrにマッチしない行 — そのまま保持
 			kept = append(kept, line)
+		} else if len(remaining) > 0 {
+			// 他のエイリアスが残っている — addrだけ除去して行を書き換え
+			kept = append(kept, strings.Replace(line, fields[0], strings.Join(remaining, ","), 1))
 		}
+		// remaining が空の場合は行ごと削除（対象ホストのみの行）
 	}
 
 	// 末尾の空行を整理して書き戻す
