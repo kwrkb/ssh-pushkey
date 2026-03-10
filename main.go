@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime/debug"
 	"strings"
@@ -23,7 +24,7 @@ func init() {
 }
 
 func main() {
-	keyPath := flag.String("i", defaultPubKeyPath(), "path to public key file")
+	keyPath := flag.String("i", "", "path to public key file")
 	port := flag.Int("p", 22, "SSH port number")
 	insecure := flag.Bool("insecure", false, "skip host key verification (vulnerable to MITM)")
 	showVersion := flag.Bool("version", false, "show version")
@@ -49,13 +50,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	pubKey, err := readPubKey(*keyPath)
+	pubKey, keySource, err := resolveKey(*keyPath)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 
-	fmt.Printf("=> Public key loaded: %s\n", *keyPath)
+	fmt.Printf("=> Public key loaded: %s\n", keySource)
 
 	fmt.Printf("=> Connecting to %s@%s:%d...\n", user, host, *port)
 	password, err := promptPassword(fmt.Sprintf("%s@%s's password: ", user, host))
@@ -80,12 +81,100 @@ func main() {
 	fmt.Println("=> Key deployment completed!")
 }
 
-func defaultPubKeyPath() string {
+// resolveKey returns the public key content and a human-readable source.
+// If explicitPath is non-empty, it reads from that file.
+// Otherwise it tries ssh-agent first, then falls back to the newest
+// ~/.ssh/id_*.pub file.
+func resolveKey(explicitPath string) (key, source string, err error) {
+	if explicitPath != "" {
+		k, err := readPubKey(explicitPath)
+		return k, explicitPath, err
+	}
+
+	if k, ok := keyFromAgent(); ok {
+		return k, "(ssh-agent)", nil
+	}
+
+	path, err := findNewestPubKey()
+	if err != nil {
+		return "", "", err
+	}
+	k, err := readPubKey(path)
+	if err != nil {
+		return "", "", err
+	}
+	return k, path, nil
+}
+
+// parseSshAddOutput extracts the first key line from ssh-add -L output.
+// Returns empty string if the output contains no valid keys.
+func parseSshAddOutput(output string) string {
+	for _, line := range strings.Split(output, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && looksLikeKeyType(fields[0]) {
+			return line
+		}
+	}
+	return ""
+}
+
+func looksLikeKeyType(s string) bool {
+	return strings.HasPrefix(s, "ssh-") ||
+		strings.HasPrefix(s, "ecdsa-") ||
+		strings.HasPrefix(s, "sk-ssh-") ||
+		strings.HasPrefix(s, "sk-ecdsa-")
+}
+
+func keyFromAgent() (string, bool) {
+	out, err := exec.Command("ssh-add", "-L").Output()
+	if err != nil {
+		return "", false
+	}
+	key := parseSshAddOutput(string(out))
+	if key == "" {
+		return "", false
+	}
+	return key, true
+}
+
+// findNewestPubKey returns the path to the newest ~/.ssh/id_*.pub file by mtime.
+func findNewestPubKey() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return ""
+		return "", fmt.Errorf("cannot determine home directory: %w", err)
 	}
-	return filepath.Join(home, ".ssh", "id_ed25519.pub")
+	return findNewestPubKeyIn(filepath.Join(home, ".ssh"))
+}
+
+func findNewestPubKeyIn(sshDir string) (string, error) {
+	matches, err := filepath.Glob(filepath.Join(sshDir, "id_*.pub"))
+	if err != nil {
+		return "", fmt.Errorf("failed to search for public keys: %w", err)
+	}
+	if len(matches) == 0 {
+		return "", fmt.Errorf("no public key found; specify one with -i or generate a key with ssh-keygen")
+	}
+
+	var newest string
+	var newestTime int64
+	for _, m := range matches {
+		info, err := os.Stat(m)
+		if err != nil {
+			continue
+		}
+		if t := info.ModTime().UnixNano(); t > newestTime {
+			newestTime = t
+			newest = m
+		}
+	}
+	if newest == "" {
+		return "", fmt.Errorf("no readable public key found in %s", sshDir)
+	}
+	return newest, nil
 }
 
 func parseTarget(target string) (user, host string, err error) {
