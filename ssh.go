@@ -81,16 +81,32 @@ func createHostKeyCallback(host string, port int) (ssh.HostKeyCallback, error) {
 
 		if len(keyErr.Want) > 0 {
 			// ホスト鍵が変更されている — MITM攻撃の可能性
-			return fmt.Errorf("%s",
-				"@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n"+
-					"@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @\n"+
-					"@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@\n"+
-					"IT IS POSSIBLE THAT SOMEONE IS DOING SOMETHING NASTY!\n"+
-					"Someone could be eavesdropping on you right now (man-in-the-middle attack)!\n"+
-					"It is also possible that a host key has just been changed.\n"+
-					fmt.Sprintf("The fingerprint for the %s key sent by the remote host is\n%s.\n",
-						key.Type(), ssh.FingerprintSHA256(key))+
-					fmt.Sprintf("Please update your known_hosts file: %s", knownHostsPath))
+			fmt.Println("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
+			fmt.Println("@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @")
+			fmt.Println("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
+			fmt.Println("IT IS POSSIBLE THAT SOMEONE IS DOING SOMETHING NASTY!")
+			fmt.Println("Someone could be eavesdropping on you right now (man-in-the-middle attack)!")
+			fmt.Println("It is also possible that a host key has just been changed.")
+			fmt.Printf("The fingerprint for the %s key sent by the remote host is\n%s.\n",
+				key.Type(), ssh.FingerprintSHA256(key))
+			fmt.Printf("Do you want to update your known_hosts file (%s)? (yes/no) ", knownHostsPath)
+
+			answer, err := readLineFromTerminal()
+			if err != nil {
+				return fmt.Errorf("failed to read response: %w", err)
+			}
+			if answer != "yes" {
+				return fmt.Errorf("host key verification failed")
+			}
+
+			// known_hostsから古いエントリを除去して新しい鍵を追記
+			if err := replaceHostKeyInKnownHosts(knownHostsPath, host, port, key); err != nil {
+				return fmt.Errorf("failed to update known_hosts: %w", err)
+			}
+
+			fmt.Printf("Warning: Updated host key for '%s' in known_hosts.\n",
+				knownhosts.Normalize(fmt.Sprintf("%s:%d", host, port)))
+			return nil
 		}
 
 		// 未知のホスト — TOFUプロンプト
@@ -125,6 +141,58 @@ func createHostKeyCallback(host string, port int) (ssh.HostKeyCallback, error) {
 		fmt.Printf("Warning: Permanently added '%s' to the list of known hosts.\n", addr)
 		return nil
 	}, nil
+}
+
+// replaceHostKeyInKnownHosts はknown_hostsファイルから指定ホストの古いエントリを除去し、
+// 新しいホスト鍵を追記する。
+func replaceHostKeyInKnownHosts(knownHostsPath string, host string, port int, newKey ssh.PublicKey) error {
+	addr := knownhosts.Normalize(fmt.Sprintf("%s:%d", host, port))
+
+	data, err := os.ReadFile(knownHostsPath)
+	if err != nil {
+		return fmt.Errorf("cannot read known_hosts: %w", err)
+	}
+
+	var kept []string
+	for _, line := range strings.Split(string(data), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			kept = append(kept, line)
+			continue
+		}
+		// 行の先頭フィールド（カンマ区切りのホスト一覧）をチェック
+		fields := strings.Fields(trimmed)
+		if len(fields) < 2 {
+			kept = append(kept, line)
+			continue
+		}
+		hosts := strings.Split(fields[0], ",")
+		match := false
+		for _, h := range hosts {
+			if h == addr {
+				match = true
+				break
+			}
+		}
+		if !match {
+			kept = append(kept, line)
+		}
+	}
+
+	// 末尾の空行を整理して書き戻す
+	content := strings.Join(kept, "\n")
+	if !strings.HasSuffix(content, "\n") {
+		content += "\n"
+	}
+
+	// 新しいエントリを追記
+	line := knownhosts.Line([]string{addr}, newKey)
+	content += line + "\n"
+
+	if err := os.WriteFile(knownHostsPath, []byte(content), 0600); err != nil {
+		return fmt.Errorf("cannot write known_hosts: %w", err)
+	}
+	return nil
 }
 
 // readLineFromTerminal は端末から1行読み取る。
