@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-03-10
+
+### Security
+
+- Add host key verification using `~/.ssh/known_hosts` with TOFU (Trust on First Use) as default
+- Add `--insecure` flag to explicitly opt-in to skip host key verification
+- Replace English-named ACL principals (`SYSTEM`, `Administrators`) with well-known SIDs (`S-1-5-18`, `S-1-5-32-544`) for non-English Windows and domain environments
+- Resolve user ACL entry via SID instead of `${env:USERNAME}` for domain account compatibility
+
+### Fixed
+
+- Admin key file detection now parses `AuthorizedKeysFile` inside `Match Group administrators` block instead of only checking block existence
+- sshd_config parser now handles case-insensitive keywords and trailing comments
+- TOFU prompt uses buffered line reading instead of raw terminal mode (backspace now works)
+
 ## [1.1.0] - 2026-03-10
 
 ### Added
@@ -41,6 +56,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Duplicate key detection
 - PowerShell remote execution via `-EncodedCommand` (UTF-16LE Base64)
 
-[Unreleased]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.1.0...HEAD
+[Unreleased]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.1.1...HEAD
+[1.1.1]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.1.0...v1.1.1
 [1.1.0]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.0.0...v1.1.0
 [1.0.0]: https://gitlab.com/kwrkb/ssh-pushkey/-/tags/v1.0.0
