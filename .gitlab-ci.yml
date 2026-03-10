@@ -1,5 +1,6 @@
 stages:
   - test
+  - build
   - release
 
 test:
@@ -14,6 +15,23 @@ vet:
   script:
     - go vet ./...
 
+build:
+  stage: build
+  image: golang:1.26
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v/
+  script:
+    - |
+      LDFLAGS="-X main.version=${CI_COMMIT_TAG}"
+      GOOS=windows GOARCH=amd64 go build -ldflags "${LDFLAGS}" -o dist/ssh-pushkey-windows-amd64.exe
+      GOOS=linux   GOARCH=amd64 go build -ldflags "${LDFLAGS}" -o dist/ssh-pushkey-linux-amd64
+      GOOS=linux   GOARCH=arm64 go build -ldflags "${LDFLAGS}" -o dist/ssh-pushkey-linux-arm64
+      GOOS=darwin  GOARCH=amd64 go build -ldflags "${LDFLAGS}" -o dist/ssh-pushkey-darwin-amd64
+      GOOS=darwin  GOARCH=arm64 go build -ldflags "${LDFLAGS}" -o dist/ssh-pushkey-darwin-arm64
+  artifacts:
+    paths:
+      - dist/
+
 release:
   stage: release
   image: registry.gitlab.com/gitlab-org/release-cli:latest
@@ -26,4 +44,13 @@ release:
       if [ ! -s /tmp/release-notes.md ]; then
         echo "Release ${CI_COMMIT_TAG}" > /tmp/release-notes.md
       fi
-      release-cli create --name "Release ${CI_COMMIT_TAG}" --tag-name "$CI_COMMIT_TAG" --description "$(cat /tmp/release-notes.md)"
+      ARTIFACTS_URL="${CI_PROJECT_URL}/-/jobs/artifacts/${CI_COMMIT_TAG}/raw/dist"
+      release-cli create \
+        --name "Release ${CI_COMMIT_TAG}" \
+        --tag-name "$CI_COMMIT_TAG" \
+        --description "$(cat /tmp/release-notes.md)" \
+        --assets-link "{\"name\":\"ssh-pushkey-windows-amd64.exe\",\"url\":\"${ARTIFACTS_URL}/ssh-pushkey-windows-amd64.exe?job=build\"}" \
+        --assets-link "{\"name\":\"ssh-pushkey-linux-amd64\",\"url\":\"${ARTIFACTS_URL}/ssh-pushkey-linux-amd64?job=build\"}" \
+        --assets-link "{\"name\":\"ssh-pushkey-linux-arm64\",\"url\":\"${ARTIFACTS_URL}/ssh-pushkey-linux-arm64?job=build\"}" \
+        --assets-link "{\"name\":\"ssh-pushkey-darwin-amd64\",\"url\":\"${ARTIFACTS_URL}/ssh-pushkey-darwin-amd64?job=build\"}" \
+        --assets-link "{\"name\":\"ssh-pushkey-darwin-arm64\",\"url\":\"${ARTIFACTS_URL}/ssh-pushkey-darwin-arm64?job=build\"}"
