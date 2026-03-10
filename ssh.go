@@ -17,13 +17,14 @@ import (
 
 func dialSSH(user, host string, port int, password string, insecure bool) (*ssh.Client, error) {
 	var hostKeyCallback ssh.HostKeyCallback
+	var hostKeyAlgorithms []string
 
 	if insecure {
 		fmt.Println("=> WARNING: Host key verification is disabled. This is vulnerable to MITM attacks.")
 		hostKeyCallback = ssh.InsecureIgnoreHostKey()
 	} else {
 		var err error
-		hostKeyCallback, err = createHostKeyCallback(host, port)
+		hostKeyCallback, hostKeyAlgorithms, err = createHostKeyCallback(host, port)
 		if err != nil {
 			return nil, fmt.Errorf("host key setup failed: %w", err)
 		}
@@ -34,7 +35,8 @@ func dialSSH(user, host string, port int, password string, insecure bool) (*ssh.
 		Auth: []ssh.AuthMethod{
 			ssh.Password(password),
 		},
-		HostKeyCallback: hostKeyCallback,
+		HostKeyCallback:  hostKeyCallback,
+		HostKeyAlgorithms: hostKeyAlgorithms,
 	}
 
 	addr := fmt.Sprintf("%s:%d", host, port)
@@ -44,10 +46,12 @@ func dialSSH(user, host string, port int, password string, insecure bool) (*ssh.
 // createHostKeyCallback はknown_hostsファイルを使用したホスト鍵検証コールバックを作成する。
 // 未知のホストに対してはTOFU（Trust on First Use）でフィンガープリントを表示し、
 // ユーザーの承認後にknown_hostsに追記する。
-func createHostKeyCallback(host string, port int) (ssh.HostKeyCallback, error) {
+// 戻り値のhostKeyAlgorithmsは、known_hostsに登録済みの鍵アルゴリズム一覧。
+// Go SSHクライアントのネゴシエーションをOpenSSHと同じ挙動に制限するために使用する。
+func createHostKeyCallback(host string, port int) (ssh.HostKeyCallback, []string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return nil, fmt.Errorf("cannot determine home directory: %w", err)
+		return nil, nil, fmt.Errorf("cannot determine home directory: %w", err)
 	}
 
 	knownHostsPath := filepath.Join(home, ".ssh", "known_hosts")
@@ -56,17 +60,24 @@ func createHostKeyCallback(host string, port int) (ssh.HostKeyCallback, error) {
 	if _, err := os.Stat(knownHostsPath); os.IsNotExist(err) {
 		sshDir := filepath.Dir(knownHostsPath)
 		if err := os.MkdirAll(sshDir, 0700); err != nil {
-			return nil, fmt.Errorf("cannot create .ssh directory: %w", err)
+			return nil, nil, fmt.Errorf("cannot create .ssh directory: %w", err)
 		}
 		if err := os.WriteFile(knownHostsPath, nil, 0600); err != nil {
-			return nil, fmt.Errorf("cannot create known_hosts file: %w", err)
+			return nil, nil, fmt.Errorf("cannot create known_hosts file: %w", err)
 		}
 	}
 
 	cb, err := knownhosts.New(knownHostsPath)
 	if err != nil {
-		return nil, fmt.Errorf("cannot read known_hosts: %w", err)
+		return nil, nil, fmt.Errorf("cannot read known_hosts: %w", err)
 	}
+
+	addr := knownhosts.Normalize(fmt.Sprintf("%s:%d", host, port))
+
+	// known_hostsから対象ホストの鍵アルゴリズムを取得。
+	// OpenSSHはknown_hostsにあるアルゴリズムだけをネゴシエーションするが、
+	// Goのknownhostsライブラリはこれを行わないため、自前で制限する。
+	hostKeyAlgorithms := hostKeyAlgorithmsFromKnownHosts(knownHostsPath, addr)
 
 	return func(hostname string, remote net.Addr, key ssh.PublicKey) error {
 		err := cb(hostname, remote, key)
@@ -100,12 +111,11 @@ func createHostKeyCallback(host string, port int) (ssh.HostKeyCallback, error) {
 			}
 
 			// known_hostsから古いエントリを除去して新しい鍵を追記
-			if err := replaceHostKeyInKnownHosts(knownHostsPath, host, port, key); err != nil {
+			if err := replaceHostKeyInKnownHosts(knownHostsPath, addr, key); err != nil {
 				return fmt.Errorf("failed to update known_hosts: %w", err)
 			}
 
-			fmt.Printf("Warning: Updated host key for '%s' in known_hosts.\n",
-				knownhosts.Normalize(fmt.Sprintf("%s:%d", host, port)))
+			fmt.Printf("Warning: Updated host key for '%s' in known_hosts.\n", addr)
 			return nil
 		}
 
@@ -126,7 +136,6 @@ func createHostKeyCallback(host string, port int) (ssh.HostKeyCallback, error) {
 		}
 
 		// known_hostsに追記
-		addr := knownhosts.Normalize(fmt.Sprintf("%s:%d", host, port))
 		line := knownhosts.Line([]string{addr}, key)
 		f, err := os.OpenFile(knownHostsPath, os.O_APPEND|os.O_WRONLY, 0600)
 		if err != nil {
@@ -140,14 +149,41 @@ func createHostKeyCallback(host string, port int) (ssh.HostKeyCallback, error) {
 
 		fmt.Printf("Warning: Permanently added '%s' to the list of known hosts.\n", addr)
 		return nil
-	}, nil
+	}, hostKeyAlgorithms, nil
+}
+
+// hostKeyAlgorithmsFromKnownHosts はknown_hostsファイルから対象ホストの鍵アルゴリズム一覧を返す。
+// ホストが未登録の場合はnilを返し、SSHクライアントのデフォルト動作に委ねる。
+func hostKeyAlgorithmsFromKnownHosts(knownHostsPath string, addr string) []string {
+	data, err := os.ReadFile(knownHostsPath)
+	if err != nil {
+		return nil
+	}
+
+	var algorithms []string
+	for _, line := range strings.Split(string(data), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		fields := strings.Fields(trimmed)
+		if len(fields) < 3 {
+			continue
+		}
+		hosts := strings.Split(fields[0], ",")
+		for _, h := range hosts {
+			if h == addr {
+				algorithms = append(algorithms, fields[1])
+				break
+			}
+		}
+	}
+	return algorithms
 }
 
 // replaceHostKeyInKnownHosts はknown_hostsファイルから指定ホストの古いエントリを除去し、
 // 新しいホスト鍵を追記する。
-func replaceHostKeyInKnownHosts(knownHostsPath string, host string, port int, newKey ssh.PublicKey) error {
-	addr := knownhosts.Normalize(fmt.Sprintf("%s:%d", host, port))
-
+func replaceHostKeyInKnownHosts(knownHostsPath string, addr string, newKey ssh.PublicKey) error {
 	data, err := os.ReadFile(knownHostsPath)
 	if err != nil {
 		return fmt.Errorf("cannot read known_hosts: %w", err)
