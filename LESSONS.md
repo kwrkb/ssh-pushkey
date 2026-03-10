@@ -69,3 +69,17 @@
 ### READMEのバージョンはハードコードしない
 - ビルドコマンドにバージョンをハードコードすると、リリースのたびに README を更新する必要がある
 - **ルール**: `$(git describe --tags --abbrev=0)` で最新タグから動的取得する
+
+## CI/CD レビュー改善 (2026-03-10)
+
+### CIのDockerイメージバージョンはgo.modと一致させる
+- `.gitlab-ci.yml` で `golang:1.24` を使っていたが、`go.mod` は `go 1.26.1` だった。GitHub Actions は `go-version-file: go.mod` で自動追従するが、GitLab CI は手動管理のため乖離が起きやすい
+- **ルール**: GitLab CI の golang イメージバージョンは `go.mod` の Go バージョンと一致させる。Go をアップデートしたら CI も同時に更新する
+
+### golang公式Dockerイメージにはcurlが同梱済み
+- GitLab CI の release ジョブで `apt-get update && apt-get install -y curl` を実行していたが、`golang:1.26` イメージには curl がプリインストールされている
+- **ルール**: golang 公式イメージで追加パッケージをインストールする前に、既に含まれていないか確認する。不要な `apt-get` はジョブを数秒遅延させる
+
+### シェルスクリプト内の変数は常にクォートする
+- GitHub Actions で `gh release create ${GITHUB_REF_NAME}` と未クォートで使用していた。タグ名にスペースが入ることは稀だが、シェルのベストプラクティスに反する
+- **ルール**: CI/CD のシェルスクリプト内で変数展開する際は `"${VAR}"` とダブルクォートで囲む。特に外部入力由来の値（タグ名、ブランチ名）は必須
