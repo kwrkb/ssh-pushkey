@@ -15,6 +15,15 @@ vet:
   script:
     - go vet ./...
 
+vulncheck:
+  stage: test
+  image: golang:1.26
+  script:
+    - go install golang.org/x/vuln/cmd/govulncheck@latest
+    - govulncheck ./...
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+
 build:
   stage: build
   image: golang:1.26
