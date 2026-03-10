@@ -16,11 +16,9 @@ vet:
 
 release:
   stage: release
-  image: golang:1.26
+  image: registry.gitlab.com/gitlab-org/release-cli:latest
   rules:
     - if: $CI_COMMIT_TAG =~ /^v/
-  before_script:
-    - curl -sL "https://gitlab.com/gitlab-org/cli/-/releases/v1.46.1/downloads/glab_1.46.1_Linux_x86_64.tar.gz" | tar xz -C /usr/local/bin --strip-components=1 bin/glab
   script:
     - |
       VERSION="${CI_COMMIT_TAG#v}"
@@ -28,4 +26,4 @@ release:
       if [ ! -s /tmp/release-notes.md ]; then
         echo "Release ${CI_COMMIT_TAG}" > /tmp/release-notes.md
       fi
-      glab release create "$CI_COMMIT_TAG" --notes-file /tmp/release-notes.md
+      release-cli create --name "Release ${CI_COMMIT_TAG}" --tag-name "$CI_COMMIT_TAG" --description "$(cat /tmp/release-notes.md)"
