@@ -71,6 +71,37 @@ ssh-pushkey/
 
 **変更ファイル**: `deploy.go`, `deploy_test.go`
 
+## Step 10: ホストキー変更のインタラクティブ対応
+
+### 現状の把握
+
+Termux から Windows ホストへ接続時、known_hosts に登録済みでも Go SSH クライアントが別の鍵アルゴリズムをネゴシエーションし「REMOTE HOST IDENTIFICATION HAS CHANGED」エラーで接続不可になる問題が発生。
+
+### 10-1: インタラクティブ known_hosts 更新（完了）
+
+- [x] ホストキー変更時に yes/no プロンプトで known_hosts 更新を確認
+- [x] 古いエントリ除去 + 新しい鍵追記の `replaceHostKeyInKnownHosts` 実装
+- [x] マルチエイリアス行で対象ホストだけ除去し他エイリアスを保持
+
+### 10-2: HostKeyAlgorithms 制限（完了）
+
+- [x] known_hosts から登録済みアルゴリズムを抽出し `config.HostKeyAlgorithms` に設定
+- [x] アルゴリズム制限でハンドシェイク失敗時は制限を外してリトライ（鍵ローテーション対応）
+
+### 10-3: レビュー指摘対応（完了）
+
+- [x] `strings.Replace` によるマルチエイリアス行書き換えをフィールド再構成に変更（Base64衝突リスク排除）
+
+### 10-4: ハッシュ化 known_hosts 対応（未着手）
+
+`HashKnownHosts yes` 環境で `|1|...` 形式のエントリに対して自前パース関数がマッチできない問題。
+
+- [ ] `hostKeyAlgorithmsFromKnownHosts` でハッシュ形式エントリに対応
+- [ ] `replaceHostKeyInKnownHosts` でハッシュ形式エントリの除去に対応
+- [ ] HMAC-SHA1 でホスト名をハッシュし比較するロジック追加
+
+**MR**: https://gitlab.com/kwrkb/ssh-pushkey/-/merge_requests/3 (10-1 〜 10-3)
+
 ## リポジトリ
 
 - [x] `git init` + リモート設定: `gitlab.com/kwrkb/ssh-pushkey`
