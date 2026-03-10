@@ -265,11 +265,11 @@ func replaceHostKeyInKnownHosts(knownHostsPath string, addr string, newKey ssh.P
 		var remaining []string
 		matched := false
 		for _, h := range hosts {
+			if strings.HasPrefix(h, "|") {
+				hasHashed = true
+			}
 			if hostMatchesAddr(h, addr) {
 				matched = true
-				if strings.HasPrefix(h, "|") {
-					hasHashed = true
-				}
 			} else {
 				remaining = append(remaining, h)
 			}
@@ -291,7 +291,7 @@ func replaceHostKeyInKnownHosts(knownHostsPath string, addr string, newKey ssh.P
 		content += "\n"
 	}
 
-	// 新しいエントリを追記（既存エントリがハッシュ形式ならハッシュ化して追記）
+	// 新しいエントリを追記（ファイル内にハッシュ形式エントリがあればハッシュ化して追記）
 	var hostEntry []string
 	if hasHashed {
 		hostEntry = []string{knownhosts.HashHostname(addr)}
