@@ -76,16 +76,43 @@ go build -ldflags "-X main.version=$(git describe --tags --abbrev=0)" -o ssh-pus
 
 ## Test
 
-```bash
-# Unit tests
-go test ./...
+### Unit tests
 
-# Integration tests (requires a real Windows host)
-export SSH_TEST_HOST=192.168.1.10
-export SSH_TEST_USER=user
-read -rs SSH_TEST_PASSWORD && export SSH_TEST_PASSWORD
-go test -tags=integration -v ./...
+```bash
+go test ./...
 ```
+
+### Integration tests
+
+Integration tests connect to a real Windows OpenSSH server. They are gated behind the `integration` build tag and skipped when the required environment variables are not set.
+
+**Setup:**
+
+1. Copy the example env file and edit it:
+   ```bash
+   cp .env.integration.example .env.integration
+   # Edit .env.integration with your host/user
+   ```
+
+2. Add your password (not stored in the file for security):
+   ```bash
+   read -rs SSH_TEST_PASSWORD && export SSH_TEST_PASSWORD
+   ```
+
+3. Run:
+   ```bash
+   source .env.integration && go test -tags=integration -v ./...
+   ```
+
+**Environment variables:**
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `SSH_TEST_HOST` | Yes | Windows SSH server IP or hostname |
+| `SSH_TEST_USER` | Yes | SSH username |
+| `SSH_TEST_PASSWORD` | Yes | SSH password (use `read -rs` to set) |
+| `SSH_TEST_PORT` | No | SSH port (default: 22) |
+| `SSH_TEST_PUBKEY` | No | Path to public key (default: `~/.ssh/id_ed25519.pub`) |
 
 ## Changelog
 
