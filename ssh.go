@@ -144,8 +144,12 @@ func createHostKeyCallback(host string, port int) (ssh.HostKeyCallback, []string
 			return fmt.Errorf("host key verification failed")
 		}
 
-		// known_hostsに追記
-		line := knownhosts.Line([]string{addr}, key)
+		// known_hostsに追記（既存ファイルがハッシュ形式ならハッシュ化して追記）
+		hostEntry := addr
+		if knownHostsHasHashedEntries(knownHostsPath) {
+			hostEntry = knownhosts.HashHostname(addr)
+		}
+		line := knownhosts.Line([]string{hostEntry}, key)
 		f, err := os.OpenFile(knownHostsPath, os.O_APPEND|os.O_WRONLY, 0600)
 		if err != nil {
 			return fmt.Errorf("cannot write to known_hosts: %w", err)
@@ -159,6 +163,21 @@ func createHostKeyCallback(host string, port int) (ssh.HostKeyCallback, []string
 		fmt.Printf("Warning: Permanently added '%s' to the list of known hosts.\n", addr)
 		return nil
 	}, hostKeyAlgorithms, nil
+}
+
+// knownHostsHasHashedEntries はknown_hostsファイルにハッシュ化エントリが存在するかを返す。
+func knownHostsHasHashedEntries(knownHostsPath string) bool {
+	data, err := os.ReadFile(knownHostsPath)
+	if err != nil {
+		return false
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed != "" && strings.HasPrefix(trimmed, "|1|") {
+			return true
+		}
+	}
+	return false
 }
 
 // matchHashedHost はハッシュ化されたknown_hostsエントリ（|1|<salt>|<hash>）が
