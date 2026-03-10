@@ -56,7 +56,7 @@ ssh-pushkey -i ~/.ssh/id_rsa.pub -p 2222 user@server
 ## Build
 
 ```bash
-go build -ldflags "-X main.version=1.1.0" -o ssh-pushkey
+go build -ldflags "-X main.version=$(git describe --tags --abbrev=0)" -o ssh-pushkey
 ```
 
 ## Test
@@ -71,6 +71,10 @@ export SSH_TEST_USER=user
 read -rs SSH_TEST_PASSWORD && export SSH_TEST_PASSWORD
 go test -tags=integration -v ./...
 ```
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for release history.
 
 ## License
 

@@ -1,4 +1,33 @@
+stages:
+  - test
+  - release
+
 test:
-  image: golang:1.26
+  stage: test
+  image: golang:1.24
   script:
     - go test ./...
+
+vet:
+  stage: test
+  image: golang:1.24
+  script:
+    - go vet ./...
+
+release:
+  stage: release
+  image: golang:1.24
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v/
+  before_script:
+    - apt-get update && apt-get install -y curl
+    - curl -sL "https://gitlab.com/gitlab-org/cli/-/releases/v1.46.1/downloads/glab_1.46.1_Linux_x86_64.tar.gz" | tar xz -C /usr/local/bin --strip-components=1 bin/glab
+  script:
+    - |
+      VERSION="${CI_COMMIT_TAG#v}"
+      NOTES=$(sed -n "/^## \[${VERSION}\]/,/^## \[/{/^## \[${VERSION}\]/d;/^## \[/d;p}" CHANGELOG.md)
+      if [ -z "$NOTES" ]; then
+        NOTES="Release ${CI_COMMIT_TAG}"
+      fi
+      echo "$NOTES" > /tmp/release-notes.md
+      glab release create "$CI_COMMIT_TAG" --notes-file /tmp/release-notes.md
