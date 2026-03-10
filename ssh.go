@@ -220,8 +220,9 @@ func replaceHostKeyInKnownHosts(knownHostsPath string, addr string, newKey ssh.P
 			// addrにマッチしない行 — そのまま保持
 			kept = append(kept, line)
 		} else if len(remaining) > 0 {
-			// 他のエイリアスが残っている — addrだけ除去して行を書き換え
-			kept = append(kept, strings.Replace(line, fields[0], strings.Join(remaining, ","), 1))
+			// 他のエイリアスが残っている — addrだけ除去してフィールドから再構成
+			fields[0] = strings.Join(remaining, ",")
+			kept = append(kept, strings.Join(fields, " "))
 		}
 		// remaining が空の場合は行ごと削除（対象ホストのみの行）
 	}
