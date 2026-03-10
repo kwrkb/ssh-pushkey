@@ -83,3 +83,19 @@
 ### シェルスクリプト内の変数は常にクォートする
 - GitHub Actions で `gh release create ${GITHUB_REF_NAME}` と未クォートで使用していた。タグ名にスペースが入ることは稀だが、シェルのベストプラクティスに反する
 - **ルール**: CI/CD のシェルスクリプト内で変数展開する際は `"${VAR}"` とダブルクォートで囲む。特に外部入力由来の値（タグ名、ブランチ名）は必須
+
+## Go SSH クライアントと known_hosts の互換性 (2026-03-10)
+
+### Go の SSH クライアントは HostKeyAlgorithms を known_hosts に合わせる
+- Go の `x/crypto/ssh` は known_hosts に登録済みのアルゴリズムを無視して任意のアルゴリズムでネゴシエーションする。known_hosts に `ssh-ed25519` しかないのに `ecdsa-sha2-nistp384` でネゴシエーションすると「ホスト鍵が変更された」と誤検知する
+- OpenSSH は known_hosts のアルゴリズムだけをネゴシエーション対象にする
+- **ルール**: Go で SSH 接続する際は known_hosts をパースして `config.HostKeyAlgorithms` を制限する。ただし鍵ローテーション時にハンドシェイクが失敗するため、制限を外してリトライするフォールバックも必要
+
+### known_hosts の自前パースではハッシュ形式を考慮する
+- `knownhosts.New()` のコールバックはハッシュ化エントリ（`|1|<salt>|<hash>`）を内部で処理するが、マッチングロジックは private で外部利用不可
+- 自前で known_hosts をパースする場合、plain-text マッチング（`h == addr`）だけではハッシュ形式に対応できない
+- **ルール**: known_hosts を自前パースする場合は `|1|` プレフィックスを検出し、HMAC-SHA1(salt, addr) で比較するロジックを実装する
+
+### マルチエイリアス行の書き換えはフィールド再構成で行う
+- `host,ip ssh-ed25519 AAAA...` のような行から特定ホストだけ除去する際、`strings.Replace` で行内テキスト置換すると Base64 部分に偶然一致するリスクがある
+- **ルール**: known_hosts の行を書き換える際は `fields` に分割してから `fields[0]` を再構成し、`strings.Join(fields, " ")` で行を組み立てる
