@@ -17,78 +17,59 @@ ssh-pushkey/
 └── go.sum
 ```
 
-## 実装ステップ
+## 過去の実装ステップ（完了済み）
 
-### Step 1: プロジェクト初期化（完了）
+- Step 1-7: 初期実装 〜 v1.0.0 リリース（完了）
+- Step 8: Windows OpenSSH ACL準拠 v1.1.0（完了）
 
-- [x] `go mod init gitlab.com/kwrkb/ssh-pushkey`
-- [x] 依存追加: `golang.org/x/crypto/ssh`, `golang.org/x/term`
+## Step 9: セキュリティ修正（v1.2.0）
 
-### Step 2: main.go — CLI引数パース（完了）
+### 現状の把握
 
-- [x] `flag` パッケージで `-i`, `-p`, `--version` を処理
-- [x] 残り引数から `user@host` をパース
-- [x] デフォルト値: 鍵=`~/.ssh/id_ed25519.pub`, ポート=22
-- [x] 公開鍵ファイル読み込み・バリデーション
+セキュリティレビューで3件の指摘を受けた:
+1. **High**: ホスト鍵検証が無効（MITM脆弱性）
+2. **Medium**: Admin鍵ファイル判定が不正確
+3. **Medium**: ACLのプリンシパル指定が名前ベースで脆弱
 
-### Step 3: ssh.go — SSH接続（完了）
+### 9-1: ホスト鍵検証の実装（High）
 
-- [x] パスワードプロンプト（`golang.org/x/term` でエコーバック無効）
-- [x] `ssh.Dial` でパスワード認証接続
-- [x] `HostKeyCallback: ssh.InsecureIgnoreHostKey()` + TODOコメント
-- [x] リモートコマンド実行ヘルパー関数（1セッション1コマンド制約対応）
+**問題**: `ssh.InsecureIgnoreHostKey()` でホスト鍵検証を完全に無効化しており、MITM攻撃でパスワードが漏洩する
 
-### Step 4: deploy.go — 鍵配置ロジック（完了）
+**方針**: `known_hosts` ファイルによる検証をデフォルトにし、`--insecure` フラグで明示的にオプトイン
 
-- [x] `buildDeployScript(pubKey string, isAdmin bool) string` — PowerShellスクリプト生成
-  - [x] Administratorsグループ判定
-  - [x] パス分岐（`administrators_authorized_keys` vs `~\.ssh\authorized_keys`）
-  - [x] ディレクトリ存在確認・作成
-  - [x] 重複チェック（Select-Stringで確認）
-  - [x] `[System.IO.File]::AppendAllText()` でBOMなしUTF-8書き込み
-  - [x] `icacls` でACL設定（継承無効、SYSTEM:F、対象ユーザー/Administrators:F）
-- [x] `DeployKey(client *ssh.Client, pubKey string) error` — 実行関数
+- [x] `golang.org/x/crypto/ssh/knownhosts` パッケージを使用
+- [x] デフォルト: `~/.ssh/known_hosts` からホスト鍵を検証
+- [x] 未知のホスト: フィンガープリントを表示し、ユーザーに確認プロンプト（Trust on First Use）
+  - 承認時は `~/.ssh/known_hosts` に自動追記
+- [x] `--insecure` フラグ追加: 検証スキップ（現在の挙動）+ 警告メッセージ表示
+- [x] README に Security セクション追加
 
-### Step 5: deploy_test.go — ユニットテスト（完了）
+**変更ファイル**: `ssh.go`, `main.go`, `README.md`
 
-- [x] Admin/一般ユーザーでのパス・ACL差異テスト
-- [x] BOMなしUTF-8書き込みコードの存在確認
-- [x] 公開鍵のエスケープ処理テスト
-- [x] 重複チェックロジックの存在確認
-- [x] ErrorActionPreference設定の確認
+### 9-2: Admin鍵ファイル判定の改善（Medium）
 
-### Step 6: インテグレーションテスト（完了）
+**問題**: `Match Group administrators` の存在だけで判定し、実際の `AuthorizedKeysFile` 値を検証していない
 
-- [x] `integration_test.go` — build tag `integration` で分離
-- [x] SSH接続テスト（`TestIntegration_SSHConnect`）
-- [x] PowerShellリモート実行テスト（`TestIntegration_RemotePowerShell`）
-- [x] Admin判定テスト（`TestIntegration_AdminDetection`）
-- [x] 鍵配置E2Eテスト（`TestIntegration_DeployKey`）— 重複スキップ含む
-- [x] Adminユーザー（kiwar）で全テストPASS
-- [x] 一般ユーザー（testuser）で全テストPASS
+**方針**: Match ブロック内の `AuthorizedKeysFile` ディレクティブを実際にパースする
 
-### Step 7: 公開準備（完了）
+- [x] sshd_config から `Match Group administrators` ブロックを抽出
+- [x] ブロック内の `AuthorizedKeysFile` 値が `administrators_authorized_keys` を含むか検証
+- [x] Match ブロックはあるが AuthorizedKeysFile が異なる場合は user ディレクトリにフォールバック + 警告
 
-- [x] README.md 作成
-- [x] LICENSE ファイル追加
-- [x] v1.0.0 タグ・リリース
+**変更ファイル**: `deploy.go`, `deploy_test.go`
 
-## 検証結果
+### 9-3: ACL プリンシパルの SID ベース化（Medium）
 
-- [x] `go build` — 正常ビルド確認
-- [x] `go test ./...` — ユニットテスト全4件 PASS
-- [x] `go test -tags=integration ./...` — インテグレーションテスト全4件 PASS（Admin/一般ユーザー両方）
-- [x] `go vet ./...` — 静的解析 OK
+**問題**: `Administrators` / `SYSTEM` が英語名ハードコード。非英語 Windows やドメイン環境で失敗する
 
-### Step 8: Windows OpenSSH ACL準拠（完了 — v1.1.0）
+**方針**: Well-known SID を使用して言語非依存にする
 
-- [x] ACLをディレクトリとファイルの両方に設定
-- [x] ACEを `SYSTEM:(F)` / `Administrators:(F)` / `${env:USERNAME}:(F)` の3つに統一
-- [x] icacls の実行結果を `$LASTEXITCODE` で検証、マーカーでGo側ハンドリング
-- [x] ユーザー向けメッセージを全て英語化（i18n）
-- [x] README英語版作成、日本語版を README_ja.md に分離
-- [x] CI/CD追加（GitLab CI: テスト、GitHub Actions: 自動リリース）
-- [x] v1.1.0 リリース（GitLab + GitHub）
+- [x] `SYSTEM` → `*S-1-5-18`（Well-known SID）
+- [x] `Administrators` → `*S-1-5-32-544`（Well-known SID）
+- [x] ユーザー: `${env:USERNAME}` → PowerShell で現在のユーザーの SID を取得して使用
+- [x] テスト更新
+
+**変更ファイル**: `deploy.go`, `deploy_test.go`
 
 ## リポジトリ
 
