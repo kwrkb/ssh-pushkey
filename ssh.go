@@ -1,17 +1,18 @@
 package main
 
 import (
+	"bufio"
 	"encoding/base64"
 	"errors"
 	"fmt"
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"unicode/utf16"
 
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/knownhosts"
-	"golang.org/x/term"
 )
 
 func dialSSH(user, host string, port int, password string, insecure bool) (*ssh.Client, error) {
@@ -128,55 +129,25 @@ func createHostKeyCallback(host string, port int) (ssh.HostKeyCallback, error) {
 
 // readLineFromTerminal は端末から1行読み取る。
 // パスワード入力後にStdinがパイプ化されている場合でも/dev/ttyから直接読み取る。
+// rawモードは使用せず、行バッファリングを利用してバックスペース等の行編集を有効にする。
 func readLineFromTerminal() (string, error) {
 	tty, err := os.Open("/dev/tty")
 	if err != nil {
 		// /dev/ttyが使えない場合（Windows等）はStdinにフォールバック
-		return readLineFrom(os.Stdin)
+		return readLine(os.Stdin)
 	}
 	defer tty.Close()
-
-	oldState, err := term.MakeRaw(int(tty.Fd()))
-	if err != nil {
-		// rawモードにできない場合はそのまま読む
-		return readLineFrom(tty)
-	}
-	defer term.Restore(int(tty.Fd()), oldState)
-
-	var result []byte
-	var b [1]byte
-	for {
-		n, err := tty.Read(b[:])
-		if err != nil || n == 0 {
-			break
-		}
-		if b[0] == '\r' || b[0] == '\n' {
-			fmt.Println()
-			break
-		}
-		result = append(result, b[0])
-		fmt.Printf("%c", b[0])
-	}
-	return string(result), nil
+	return readLine(tty)
 }
 
-// readLineFrom はリーダーから改行までの1行を読み取る。
-func readLineFrom(r *os.File) (string, error) {
-	var result []byte
-	var b [1]byte
-	for {
-		n, err := r.Read(b[:])
-		if n > 0 {
-			if b[0] == '\r' || b[0] == '\n' {
-				break
-			}
-			result = append(result, b[0])
-		}
-		if err != nil {
-			break
-		}
+// readLine はリーダーから改行までの1行を読み取る。
+func readLine(r *os.File) (string, error) {
+	reader := bufio.NewReader(r)
+	line, err := reader.ReadString('\n')
+	if err != nil && len(line) == 0 {
+		return "", err
 	}
-	return string(result), nil
+	return strings.TrimRight(line, "\r\n"), nil
 }
 
 // encodePowerShellCommand はPowerShellスクリプトをUTF-16LEのBase64にエンコードする。
