@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-03-10
+
+### Added
+
+- Auto-discover default public key when `-i` is not specified (ssh-copy-id compatible)
+  - Try ssh-agent (`ssh-add -L`) first, use the first key if available
+  - Fall back to newest `~/.ssh/id_*.pub` file by modification time
+  - Support FIDO/U2F security key types (`sk-ssh-ed25519`, `sk-ecdsa-sha2-nistp256`)
+- Display key source in output: file path or `(ssh-agent)`
+- Unit tests for `parseSshAddOutput` and `findNewestPubKeyIn`
+
+### Changed
+
+- Replaced fixed `id_ed25519.pub` default with unified `resolveKey()` function
+
 ## [1.3.0] - 2026-03-10
 
 ### Added
@@ -71,7 +86,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Duplicate key detection
 - PowerShell remote execution via `-EncodedCommand` (UTF-16LE Base64)
 
-[Unreleased]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.1.2...HEAD
+[Unreleased]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.4.0...HEAD
+[1.4.0]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.3.0...v1.4.0
 [1.1.2]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.1.1...v1.1.2
 [1.1.1]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.1.0...v1.1.1
 [1.1.0]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.0.0...v1.1.0
