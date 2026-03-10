@@ -28,8 +28,17 @@ jobs:
 
           GOOS=windows GOARCH=amd64 go build -ldflags "${LDFLAGS}" -o dist/ssh-pushkey-windows-amd64.exe
           GOOS=linux   GOARCH=amd64 go build -ldflags "${LDFLAGS}" -o dist/ssh-pushkey-linux-amd64
+          GOOS=linux   GOARCH=arm64 go build -ldflags "${LDFLAGS}" -o dist/ssh-pushkey-linux-arm64
           GOOS=darwin  GOARCH=amd64 go build -ldflags "${LDFLAGS}" -o dist/ssh-pushkey-darwin-amd64
           GOOS=darwin  GOARCH=arm64 go build -ldflags "${LDFLAGS}" -o dist/ssh-pushkey-darwin-arm64
+
+      - name: Extract release notes from CHANGELOG
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          sed -n "/^## \[${VERSION}\]/,/^## \[/{/^## \[${VERSION}\]/d;/^## \[/d;p}" CHANGELOG.md > /tmp/release-notes.md
+          if [ ! -s /tmp/release-notes.md ]; then
+            echo "Release ${GITHUB_REF_NAME}" > /tmp/release-notes.md
+          fi
 
       - name: Create release
         env:
@@ -37,4 +46,4 @@ jobs:
         run: |
           gh release create ${GITHUB_REF_NAME} dist/* \
             --title "${GITHUB_REF_NAME}" \
-            --generate-notes
+            --notes-file /tmp/release-notes.md
