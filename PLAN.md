@@ -92,15 +92,19 @@ Termux から Windows ホストへ接続時、known_hosts に登録済みでも 
 
 - [x] `strings.Replace` によるマルチエイリアス行書き換えをフィールド再構成に変更（Base64衝突リスク排除）
 
-### 10-4: ハッシュ化 known_hosts 対応（未着手）
+### 10-4: ハッシュ化 known_hosts 対応（完了）
 
 `HashKnownHosts yes` 環境で `|1|...` 形式のエントリに対して自前パース関数がマッチできない問題。
 
-- [ ] `hostKeyAlgorithmsFromKnownHosts` でハッシュ形式エントリに対応
-- [ ] `replaceHostKeyInKnownHosts` でハッシュ形式エントリの除去に対応
-- [ ] HMAC-SHA1 でホスト名をハッシュし比較するロジック追加
+- [x] `hostKeyAlgorithmsFromKnownHosts` でハッシュ形式エントリに対応
+- [x] `replaceHostKeyInKnownHosts` でハッシュ形式エントリの除去に対応
+- [x] HMAC-SHA1 でホスト名をハッシュし比較するロジック追加
+- [x] TOFU パスでもハッシュ形式を維持（Codex レビューで発見）
+- [x] TOFU / replace 両パスでハッシュ判定ロジックを統一（Gemini レビューで発見）
+- [x] `ssh_test.go` — `matchHashedHost` / `hostMatchesAddr` のユニットテスト追加
 
 **MR**: https://gitlab.com/kwrkb/ssh-pushkey/-/merge_requests/3 (10-1 〜 10-3)
+**MR**: https://gitlab.com/kwrkb/ssh-pushkey/-/merge_requests/4 (10-4)
 
 ## リポジトリ
 
