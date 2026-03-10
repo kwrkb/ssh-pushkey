@@ -107,3 +107,17 @@
 ### マルチAIレビューで異なる観点が得られる
 - Claude（simplify）は構造・重複・効率を重視、Codex はユーザーシナリオの抜け（TOFU パスの未対応）を発見、Gemini はコードパス間の一貫性不整合を発見。単一AIでは見落とすバグが複数AIの組み合わせで検出できた
 - **ルール**: セキュリティやデータ整合性に関わる変更は、複数AIでレビューする。各AIに異なる観点（構造、シナリオ、一貫性）を指示すると効果的
+
+## デフォルト公開鍵の探索強化 (2026-03-10)
+
+### 関数を削除する前に全 build tag のビルドを確認する
+- `defaultPubKeyPath()` を削除したが、`integration_test.go`（`//go:build integration`）がまだ参照しており、`go test -tags=integration ./...` がコンパイルエラーになった。通常の `go test ./...` では build tag 付きファイルがビルドされないため見逃した。Codex レビューで発見
+- **ルール**: 関数を削除・リネームする際は `go build -tags=integration ./...` など全 build tag でビルドを確認する。`go test ./...` だけでは不十分
+
+### ssh-add -L の出力パースでは鍵タイプのプレフィックスで判定する
+- `ssh-add -L` は鍵がない場合 `The agent has no identities.` を返す。`len(fields) >= 2` だけでは誤って有効な鍵と判定してしまう。また FIDO/U2F キーは `sk-ssh-ed25519`, `sk-ecdsa-sha2-nistp256` で始まるため `ssh-` と `ecdsa-` だけでは不十分
+- **ルール**: ssh 公開鍵の判定は鍵タイプ文字列のプレフィックス（`ssh-`, `ecdsa-`, `sk-ssh-`, `sk-ecdsa-`）で行う。フィールド数だけで判定しない
+
+### Gemini CLI のレビューでは plan モードを使わない
+- Gemini CLI の `--approval-mode plan` はシェルコマンド実行が制限されるため、`git diff` や `go build` が実行できずレビューが機能しなかった。またプロンプトにビルド・テスト実行を含めないと、コンパイルエラーのような基本的な問題を見逃す
+- **ルール**: Gemini CLI でコードレビューする際は必ず `-y` を使い、プロンプトに「差分取得 → ビルド → テスト → レビュー」の手順を含める。`--approval-mode plan` はレビューには使わない
