@@ -28,6 +28,7 @@ ssh-pushkey user@host
 |--------|-----------|------|
 | `-i` | `~/.ssh/id_ed25519.pub` | 公開鍵ファイルのパス |
 | `-p` | `22` | SSH ポート番号 |
+| `--insecure` | `false` | ホスト鍵検証をスキップ（非推奨） |
 | `--version` | - | バージョン表示 |
 
 ### 例
@@ -59,18 +60,59 @@ ssh-pushkey -i ~/.ssh/id_rsa.pub -p 2222 user@server
 go build -ldflags "-X main.version=$(git describe --tags --abbrev=0)" -o ssh-pushkey
 ```
 
+## セキュリティ
+
+### ホスト鍵検証
+
+デフォルトで `~/.ssh/known_hosts` を使ってリモートホストの鍵を検証する（OpenSSH と同じ挙動）。初回接続時はフィンガープリントを表示して確認を求め（Trust on First Use）、承認すると `known_hosts` に自動追記する。
+
+ホスト鍵が前回と異なる場合は MITM 攻撃の可能性を警告し、接続を拒否する。
+
+`--insecure` でホスト鍵検証をスキップできるが、パスワードが中間者攻撃で漏洩するリスクがあるため **非推奨**。
+
+### ACL 設定
+
+ACL エントリはローカライズされたグループ名ではなく Well-known SID（`S-1-5-18`: SYSTEM、`S-1-5-32-544`: Administrators）を使用する。非英語版 Windows やドメイン環境でも正しく動作する。
+
 ## テスト
 
-```bash
-# ユニットテスト
-go test ./...
+### ユニットテスト
 
-# インテグレーションテスト（実機接続）
-export SSH_TEST_HOST=192.168.1.10
-export SSH_TEST_USER=user
-read -rs SSH_TEST_PASSWORD && export SSH_TEST_PASSWORD
-go test -tags=integration -v ./...
+```bash
+go test ./...
 ```
+
+### インテグレーションテスト
+
+インテグレーションテストは実際の Windows OpenSSH サーバーに接続する。`integration` ビルドタグで分離されており、環境変数が未設定の場合はスキップされる。
+
+**セットアップ:**
+
+1. env ファイルをコピーして編集:
+   ```bash
+   cp .env.integration.example .env.integration
+   # .env.integration のホスト名・ユーザー名を編集
+   ```
+
+2. パスワードを設定（ファイルに保存しない）:
+   ```bash
+   read -rs SSH_TEST_PASSWORD && export SSH_TEST_PASSWORD
+   ```
+
+3. 実行:
+   ```bash
+   source .env.integration && go test -tags=integration -v ./...
+   ```
+
+**環境変数:**
+
+| 変数 | 必須 | 説明 |
+|------|------|------|
+| `SSH_TEST_HOST` | Yes | Windows SSH サーバーの IP またはホスト名 |
+| `SSH_TEST_USER` | Yes | SSH ユーザー名 |
+| `SSH_TEST_PASSWORD` | Yes | SSH パスワード（`read -rs` で設定推奨） |
+| `SSH_TEST_PORT` | No | SSH ポート（デフォルト: 22） |
+| `SSH_TEST_PUBKEY` | No | 公開鍵パス（デフォルト: `~/.ssh/id_ed25519.pub`） |
 
 ## 変更履歴
 
