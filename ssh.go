@@ -2,6 +2,8 @@ package main
 
 import (
 	"bufio"
+	"crypto/hmac"
+	"crypto/sha1"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -159,6 +161,36 @@ func createHostKeyCallback(host string, port int) (ssh.HostKeyCallback, []string
 	}, hostKeyAlgorithms, nil
 }
 
+// matchHashedHost はハッシュ化されたknown_hostsエントリ（|1|<salt>|<hash>）が
+// 指定アドレスにマッチするかをHMAC-SHA1で検証する。
+func matchHashedHost(pattern, addr string) bool {
+	// フォーマット: |1|<base64-salt>|<base64-hash>
+	parts := strings.Split(pattern, "|")
+	if len(parts) != 4 || parts[0] != "" || parts[1] != "1" {
+		return false
+	}
+	salt, err := base64.StdEncoding.DecodeString(parts[2])
+	if err != nil {
+		return false
+	}
+	expectedHash, err := base64.StdEncoding.DecodeString(parts[3])
+	if err != nil {
+		return false
+	}
+	mac := hmac.New(sha1.New, salt)
+	mac.Write([]byte(addr))
+	return hmac.Equal(mac.Sum(nil), expectedHash)
+}
+
+// hostMatchesAddr はknown_hostsのホストフィールド（plain-textまたはハッシュ形式）が
+// 指定アドレスにマッチするかを判定する。
+func hostMatchesAddr(host, addr string) bool {
+	if strings.HasPrefix(host, "|") {
+		return matchHashedHost(host, addr)
+	}
+	return host == addr
+}
+
 // hostKeyAlgorithmsFromKnownHosts はknown_hostsファイルから対象ホストの鍵アルゴリズム一覧を返す。
 // ホストが未登録の場合はnilを返し、SSHクライアントのデフォルト動作に委ねる。
 func hostKeyAlgorithmsFromKnownHosts(knownHostsPath string, addr string) []string {
@@ -179,7 +211,7 @@ func hostKeyAlgorithmsFromKnownHosts(knownHostsPath string, addr string) []strin
 		}
 		hosts := strings.Split(fields[0], ",")
 		for _, h := range hosts {
-			if h == addr {
+			if hostMatchesAddr(h, addr) {
 				algorithms = append(algorithms, fields[1])
 				break
 			}
@@ -197,6 +229,7 @@ func replaceHostKeyInKnownHosts(knownHostsPath string, addr string, newKey ssh.P
 	}
 
 	var kept []string
+	hasHashed := false
 	for _, line := range strings.Split(string(data), "\n") {
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
@@ -211,12 +244,18 @@ func replaceHostKeyInKnownHosts(knownHostsPath string, addr string, newKey ssh.P
 		}
 		hosts := strings.Split(fields[0], ",")
 		var remaining []string
+		matched := false
 		for _, h := range hosts {
-			if h != addr {
+			if hostMatchesAddr(h, addr) {
+				matched = true
+				if strings.HasPrefix(h, "|") {
+					hasHashed = true
+				}
+			} else {
 				remaining = append(remaining, h)
 			}
 		}
-		if len(remaining) == len(hosts) {
+		if !matched {
 			// addrにマッチしない行 — そのまま保持
 			kept = append(kept, line)
 		} else if len(remaining) > 0 {
@@ -233,8 +272,14 @@ func replaceHostKeyInKnownHosts(knownHostsPath string, addr string, newKey ssh.P
 		content += "\n"
 	}
 
-	// 新しいエントリを追記
-	line := knownhosts.Line([]string{addr}, newKey)
+	// 新しいエントリを追記（既存エントリがハッシュ形式ならハッシュ化して追記）
+	var hostEntry []string
+	if hasHashed {
+		hostEntry = []string{knownhosts.HashHostname(addr)}
+	} else {
+		hostEntry = []string{addr}
+	}
+	line := knownhosts.Line(hostEntry, newKey)
 	content += line + "\n"
 
 	if err := os.WriteFile(knownHostsPath, []byte(content), 0600); err != nil {
