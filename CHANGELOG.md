@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-03-10
+
+### Fixed
+
+- Lower go directive to 1.26.0 for Termux compatibility (`go install` failed with Go 1.26.0)
+
 ## [1.1.1] - 2026-03-10
 
 ### Security
@@ -56,7 +62,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Duplicate key detection
 - PowerShell remote execution via `-EncodedCommand` (UTF-16LE Base64)
 
-[Unreleased]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.1.1...HEAD
+[Unreleased]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.1.2...HEAD
+[1.1.2]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.1.1...v1.1.2
 [1.1.1]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.1.0...v1.1.1
 [1.1.0]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.0.0...v1.1.0
 [1.0.0]: https://gitlab.com/kwrkb/ssh-pushkey/-/tags/v1.0.0
