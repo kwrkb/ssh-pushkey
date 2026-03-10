@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-03-10
+
+### Added
+
+- Support hashed known_hosts entries (`HashKnownHosts yes`) with HMAC-SHA1 verification
+- New TOFU entries preserve hashed format when existing known_hosts contains hashed entries
+- Host key replacement preserves hashed format consistently across all code paths
+- Unit tests for `matchHashedHost` and `hostMatchesAddr` helpers
+
 ## [1.1.2] - 2026-03-10
 
 ### Fixed
