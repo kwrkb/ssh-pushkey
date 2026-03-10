@@ -91,12 +91,7 @@ func TestIntegration_AdminDetection(t *testing.T) {
 func TestIntegration_DeployKey(t *testing.T) {
 	env := loadTestEnv(t)
 
-	pubKeyPath := os.Getenv("SSH_TEST_PUBKEY")
-	if pubKeyPath == "" {
-		pubKeyPath = defaultPubKeyPath()
-	}
-
-	pubKey, err := readPubKey(pubKeyPath)
+	pubKey, _, err := resolveKey(os.Getenv("SSH_TEST_PUBKEY"))
 	if err != nil {
 		t.Fatalf("failed to read public key: %v", err)
 	}
