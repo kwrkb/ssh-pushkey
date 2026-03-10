@@ -18,9 +18,10 @@ func TestBuildDeployScript_Admin(t *testing.T) {
 		{"public key present", pubKey},
 		{"BOM-less UTF8", "New-Object System.Text.UTF8Encoding $false"},
 		{"AppendAllText", "[System.IO.File]::AppendAllText"},
-		{"icacls SYSTEM", "SYSTEM:(F)"},
-		{"icacls Administrators", "Administrators:(F)"},
-		{"icacls user", "${env:USERNAME}:(F)"},
+		{"icacls SYSTEM SID", "*S-1-5-18:(F)"},
+		{"icacls Administrators SID", "*S-1-5-32-544:(F)"},
+		{"icacls user SID", "*${userSid}:(F)"},
+		{"user SID lookup", "WindowsIdentity]::GetCurrent()).User.Value"},
 		{"duplicate check", "Select-String"},
 		{"inheritance remove keyFile", "icacls $keyFile /inheritance:r"},
 		{"inheritance remove sshDir", "icacls $sshDir /inheritance:r"},
@@ -48,8 +49,10 @@ func TestBuildDeployScript_NormalUser(t *testing.T) {
 		{"user ssh dir", `.ssh`},
 		{"public key present", pubKey},
 		{"BOM-less UTF8", "New-Object System.Text.UTF8Encoding $false"},
-		{"icacls user", "${env:USERNAME}:(F)"},
-		{"icacls Administrators", "Administrators:(F)"},
+		{"icacls SYSTEM SID", "*S-1-5-18:(F)"},
+		{"icacls Administrators SID", "*S-1-5-32-544:(F)"},
+		{"icacls user SID", "*${userSid}:(F)"},
+		{"user SID lookup", "WindowsIdentity]::GetCurrent()).User.Value"},
 		{"duplicate check", "Select-String"},
 		{"inheritance remove sshDir", "icacls $sshDir /inheritance:r"},
 		{"LASTEXITCODE check", "LASTEXITCODE"},
@@ -100,5 +103,24 @@ func TestBuildDeployScript_ErrorActionPreference(t *testing.T) {
 
 	if !strings.Contains(script, "$ErrorActionPreference = 'Stop'") {
 		t.Error("script should set ErrorActionPreference to Stop")
+	}
+}
+
+func TestBuildDeployScript_NoHardcodedPrincipalNames(t *testing.T) {
+	script := buildDeployScript("ssh-ed25519 AAAA test", false)
+
+	// 名前ベースのプリンシパルがicaclsコマンドに含まれないことを確認
+	// （SIDベースの *S-1-5-18 等を使用すべき）
+	lines := strings.Split(script, "\n")
+	for _, line := range lines {
+		if !strings.Contains(line, "icacls") {
+			continue
+		}
+		if strings.Contains(line, "'SYSTEM:(F)'") {
+			t.Errorf("icacls should use SID (*S-1-5-18) instead of name 'SYSTEM'\nline: %s", line)
+		}
+		if strings.Contains(line, "'Administrators:(F)'") {
+			t.Errorf("icacls should use SID (*S-1-5-32-544) instead of name 'Administrators'\nline: %s", line)
+		}
 	}
 }
