@@ -120,6 +120,15 @@ Termux から Windows ホストへ接続時、known_hosts に登録済みでも 
 - [x] `main.go` の `defaultPubKeyPath()` を `resolveDefaultKey()` に置き換え
 - [x] `main_test.go` に `parseSshAddOutput` / `findNewestPubKeyIn` のユニットテスト追加
 
+### Dry-run モード（`-n` フラグ）
+
+`ssh-copy-id -n` 互換。鍵を実際に配置せず、何が行われるかをプレビュー表示する。
+
+- [ ] `-n` / `--dry-run` フラグ追加
+- [ ] 鍵読み込み・SSH接続・Admin判定まで実行し、配置先パスと鍵内容を表示
+- [ ] `DeployKey` を呼ばずに終了（実際のファイル書き込み・ACL設定はスキップ）
+- [ ] 重複チェック結果も表示（「既に配置済み」or「新規追加予定」）
+
 ### エラーメッセージの局所化（icacls 出力の伝搬）
 
 PowerShell 側でエラー発生時に `ACL_SET_FAILED_DIR` などのマーカーを返しているが、`icacls` が出力した実際のエラーメッセージが Go 側に伝搬されていない。トラブルシューティング改善のため、実エラー出力を含める。

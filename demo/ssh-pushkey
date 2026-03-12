@@ -1,0 +1,27 @@
+#!/bin/bash
+# Fake ssh-pushkey binary for demo recording
+# Ignores all arguments and plays mock output
+
+sleep 0.3
+echo "=> Public key loaded: ~/.ssh/id_ed25519.pub"
+sleep 0.5
+echo "=> Connecting to admin@192.168.1.10:22..."
+sleep 0.3
+read -s -p "admin@192.168.1.10's password: " _pass
+echo ""
+sleep 0.5
+echo "=> SSH connection established"
+sleep 0.4
+echo "=> Checking Administrators group..."
+sleep 0.3
+echo "=> User is in Administrators group"
+sleep 0.3
+echo "=> Checking sshd_config..."
+sleep 0.3
+echo "=> administrators_authorized_keys is enabled"
+sleep 0.3
+echo "=> Deploying public key..."
+sleep 0.5
+echo "=> Key deployed successfully"
+sleep 0.2
+echo "=> Key deployment completed!"
