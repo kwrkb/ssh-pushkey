@@ -4,7 +4,11 @@
 
 An `ssh-copy-id` alternative for Windows OpenSSH servers.
 
-Connects via password authentication and automatically deploys your public key. Handles all Windows-specific pitfalls (BOM, Admin branching, ACL). Sets proper ACL on both the `.ssh` directory and key file.
+Connects via password authentication and automatically deploys your public key. Handles all Windows-specific pitfalls (BOM, Admin branching, ACL). Sets proper ACL on both the `.ssh` directory and key file using well-known SIDs for cross-locale compatibility.
+
+## Demo
+
+![ssh-pushkey demo](demo/demo.gif)
 
 ## Installation
 
@@ -22,11 +26,21 @@ ssh-pushkey user@host
 
 Enter your password and the rest is fully automated.
 
+### Default key discovery
+
+When `-i` is not specified, ssh-pushkey discovers a public key automatically (same logic as `ssh-copy-id`):
+
+1. **ssh-agent** — runs `ssh-add -L`; uses the first key if available
+2. **File fallback** — globs `~/.ssh/id_*.pub` and picks the newest by modification time
+3. If neither source provides a key, exits with an error
+
+Supported key types include `ed25519`, `rsa`, `ecdsa`, and FIDO/U2F (`sk-ssh-ed25519`, `sk-ecdsa-sha2-nistp256`).
+
 ### Options
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `-i` | `~/.ssh/id_ed25519.pub` | Path to the public key file |
+| `-i` | *(auto-discover)* | Path to the public key file |
 | `-p` | `22` | SSH port number |
 | `--insecure` | `false` | Skip host key verification (not recommended) |
 | `--version` | - | Show version |
@@ -34,7 +48,7 @@ Enter your password and the rest is fully automated.
 ### Examples
 
 ```bash
-# Use the default key
+# Auto-discover key and deploy
 ssh-pushkey admin@192.168.1.10
 
 # Specify key and port
@@ -47,7 +61,7 @@ ssh-pushkey -i ~/.ssh/id_rsa.pub -p 2222 user@server
 2. Detects whether the user is in the Administrators group
 3. Checks if `administrators_authorized_keys` is enabled in `sshd_config`
 4. Writes the public key in BOM-less UTF-8 to the appropriate file
-5. Sets ACL on both the `.ssh` directory and key file via `icacls` (`SYSTEM:(F)`, `Administrators:(F)`, `User:(F)`)
+5. Sets ACL on both the `.ssh` directory and key file via `icacls` using well-known SIDs (`SYSTEM`, `Administrators`, current user)
 
 | User type | Key destination |
 |-----------|-----------------|
@@ -60,7 +74,9 @@ ssh-pushkey -i ~/.ssh/id_rsa.pub -p 2222 user@server
 
 By default, ssh-pushkey verifies the remote host's key against `~/.ssh/known_hosts`, the same as OpenSSH. On first connection to an unknown host, you'll be prompted to verify the fingerprint (Trust on First Use). Accepted keys are automatically added to your `known_hosts` file.
 
-If the host key has changed since a previous connection, the connection is refused with a warning (possible MITM attack).
+If the host key has changed since a previous connection, you'll be prompted to confirm the update. This handles legitimate key rotations while still alerting you to potential MITM attacks.
+
+Hashed `known_hosts` entries (`HashKnownHosts yes`) are fully supported — both matching and writing preserve the hashed format.
 
 Use `--insecure` to skip host key verification. **This is not recommended** as it makes the connection vulnerable to man-in-the-middle attacks, potentially exposing your password.
 
