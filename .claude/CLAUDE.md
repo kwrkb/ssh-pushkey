@@ -30,14 +30,14 @@ go test -tags=integration -v ./...
 
 ## Git Workflow
 
-- リポジトリは GitLab ホスト (`gitlab.com/kwrkb/ssh-pushkey`)
-- MR 作成には `glab mr create` を使う。`gh pr create` は使わない
-- GitHub は GitLab からのミラーリングで自動同期。`gh` コマンドではなく `glab` を使う
+- デュアルリモート: `origin`=GitLab, `github`=GitHub
+- push は両方に行う: `git push origin && git push github`
+- MR/PR も両方に作成: `glab mr create` + `gh pr create`
+- マージ戦略は揃える（両方 merge commit 推奨）
 - リリースは両方とも CI/CD で自動化済み:
-  - **GitLab**: `.gitlab-ci.yml` の `release` ジョブが `v*` タグ push で CHANGELOG.md からノート抽出 → `glab release create` 実行
+  - **GitLab**: `.gitlab-ci.yml` の `release` ジョブが `v*` タグ push で CHANGELOG.md からノート抽出
   - **GitHub**: `.github/workflows/release.yml` が `v*` タグ push で CHANGELOG.md からノート抽出 → クロスプラットフォームバイナリ付きリリース作成
-- タグは GitLab に push すればミラー経由で GitHub にも反映される
-- リリース手順: `CHANGELOG.md` 更新 → タグ作成・push → 両 CI が自動でリリース作成
+- リリース手順: `CHANGELOG.md` 更新 → タグ作成 → 両リモートに push → 両 CI が自動でリリース作成
 
 ## テスト方針
 
