@@ -30,10 +30,11 @@ go test -tags=integration -v ./...
 
 ## Git Workflow
 
-- デュアルリモート: `origin`=GitLab, `github`=GitHub
-- push は両方に行う: `git push origin && git push github`
-- MR/PR も両方に作成: `glab mr create` + `gh pr create`
+- デュアルリモート: `origin`=GitHub（プライマリ）、`gitlab`=GitLab（サブ）
+- push は `git push origin && git push gitlab` の順
+- MR/PR も両方に作成: `gh pr create` + `glab mr create`
 - マージ戦略は揃える（両方 merge commit 推奨）
+- 両 remote で独立にマージするとマージコミット SHA が割れる。次回 master push が非 fast-forward で reject されたら `git merge gitlab/master` で reconcile してから両方に push する
 - リリースは両方とも CI/CD で自動化済み:
   - **GitLab**: `.gitlab-ci.yml` の `release` ジョブが `v*` タグ push で CHANGELOG.md からノート抽出
   - **GitHub**: `.github/workflows/release.yml` が `v*` タグ push で CHANGELOG.md からノート抽出 → クロスプラットフォームバイナリ付きリリース作成
@@ -43,7 +44,7 @@ go test -tags=integration -v ./...
 
 - ユニットテスト: `strings.Contains` でスクリプト内容を検証（CLIXML 混入対策）
 - 統合テスト: build tag `integration` で分離。環境変数 `SSH_TEST_HOST`, `SSH_TEST_USER`, `SSH_TEST_PASSWORD` が必要
-- PR 前に `go test ./...` と `go vet ./...` を必ず実行
+- PR 前に `go test ./...` / `go vet ./...` / `go build -tags=integration ./...` を必ず実行（build tag 付きファイルのコンパイル崩れを検知）
 
 ## Windows OpenSSH 固有ルール
 
