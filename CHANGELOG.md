@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-04-29
+
+### Security
+
+- Reject `.pub` files containing multiple non-empty lines and validate format with `ssh.ParseAuthorizedKey` (prevents malformed or unintended keys from landing in `authorized_keys`)
+- Apply the same validation to keys returned by `ssh-add -L` so the agent path cannot bypass the gate
+- Narrow `dialSSH` retry to host-key algorithm negotiation failures only; authentication failures no longer trigger a second password attempt (avoids server-side lockout and audit-log noise)
+
 ## [1.4.0] - 2026-03-10
 
 ### Added
@@ -86,7 +94,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Duplicate key detection
 - PowerShell remote execution via `-EncodedCommand` (UTF-16LE Base64)
 
-[Unreleased]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.4.0...HEAD
+[Unreleased]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.4.1...HEAD
+[1.4.1]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.4.0...v1.4.1
 [1.4.0]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.3.0...v1.4.0
 [1.1.2]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.1.1...v1.1.2
 [1.1.1]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.1.0...v1.1.1
