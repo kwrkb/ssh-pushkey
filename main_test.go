@@ -3,9 +3,13 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
+
+// テスト用に固定の正規 ed25519 公開鍵
+const validEd25519PubKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBwa4JTkbuiW41olDGfQiKbxFUH+2cU4Yqs1MWkyIAHX test@example"
 
 func TestParseSshAddOutput(t *testing.T) {
 	tests := []struct {
@@ -133,5 +137,113 @@ func TestFindNewestPubKey_IgnoresNonIdFiles(t *testing.T) {
 	}
 	if got != key {
 		t.Errorf("findNewestPubKeyIn() = %q, want %q", got, key)
+	}
+}
+
+func writeTempPubKey(t *testing.T, content string) string {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.pub")
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		t.Fatalf("failed to write temp pub key: %v", err)
+	}
+	return path
+}
+
+func TestReadPubKey_ValidSingleKey(t *testing.T) {
+	path := writeTempPubKey(t, validEd25519PubKey+"\n")
+
+	got, err := readPubKey(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != validEd25519PubKey {
+		t.Errorf("readPubKey returned %q, want %q", got, validEd25519PubKey)
+	}
+}
+
+func TestReadPubKey_TrailingBlankLines(t *testing.T) {
+	path := writeTempPubKey(t, validEd25519PubKey+"\n\n   \n")
+
+	got, err := readPubKey(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != validEd25519PubKey {
+		t.Errorf("readPubKey returned %q, want %q", got, validEd25519PubKey)
+	}
+}
+
+func TestReadPubKey_Empty(t *testing.T) {
+	path := writeTempPubKey(t, "")
+
+	if _, err := readPubKey(path); err == nil {
+		t.Error("expected error for empty file, got nil")
+	} else if !strings.Contains(err.Error(), "empty") {
+		t.Errorf("error should mention empty, got %v", err)
+	}
+}
+
+func TestReadPubKey_WhitespaceOnly(t *testing.T) {
+	path := writeTempPubKey(t, "   \n\n\t\n")
+
+	if _, err := readPubKey(path); err == nil {
+		t.Error("expected error for whitespace-only file, got nil")
+	} else if !strings.Contains(err.Error(), "empty") {
+		t.Errorf("error should mention empty, got %v", err)
+	}
+}
+
+func TestReadPubKey_MultipleKeys(t *testing.T) {
+	path := writeTempPubKey(t, validEd25519PubKey+"\n"+validEd25519PubKey+"\n")
+
+	if _, err := readPubKey(path); err == nil {
+		t.Error("expected error for multiple keys, got nil")
+	} else if !strings.Contains(err.Error(), "exactly one key") {
+		t.Errorf("error should mention 'exactly one key', got %v", err)
+	}
+}
+
+func TestReadPubKey_InvalidFormat(t *testing.T) {
+	path := writeTempPubKey(t, "ssh-rsa GARBAGE comment\n")
+
+	if _, err := readPubKey(path); err == nil {
+		t.Error("expected error for invalid key format, got nil")
+	} else if !strings.Contains(err.Error(), "invalid public key format") {
+		t.Errorf("error should mention 'invalid public key format', got %v", err)
+	}
+}
+
+func TestReadPubKey_TooFewFields(t *testing.T) {
+	path := writeTempPubKey(t, "just-one-token\n")
+
+	if _, err := readPubKey(path); err == nil {
+		t.Error("expected error for malformed key, got nil")
+	}
+}
+
+func TestValidatePubKeyLine_Valid(t *testing.T) {
+	got, err := validatePubKeyLine(validEd25519PubKey + "\r\n")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != validEd25519PubKey {
+		t.Errorf("validatePubKeyLine returned %q, want %q", got, validEd25519PubKey)
+	}
+}
+
+func TestValidatePubKeyLine_TrimsLeadingAndTrailingSpaces(t *testing.T) {
+	got, err := validatePubKeyLine("  \t" + validEd25519PubKey + " \t\r\n")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != validEd25519PubKey {
+		t.Errorf("validatePubKeyLine returned %q, want %q (no leading/trailing spaces)", got, validEd25519PubKey)
+	}
+}
+
+func TestValidatePubKeyLine_Invalid(t *testing.T) {
+	if _, err := validatePubKeyLine("not a key"); err == nil {
+		t.Error("expected error for invalid input, got nil")
 	}
 }
