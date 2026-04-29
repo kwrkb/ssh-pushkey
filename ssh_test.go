@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"testing"
 
 	"golang.org/x/crypto/ssh/knownhosts"
@@ -58,5 +59,57 @@ func TestHostMatchesAddr_Hashed(t *testing.T) {
 	}
 	if hostMatchesAddr(hashed, "other.com") {
 		t.Error("hostMatchesAddr should not match a different address against hashed entry")
+	}
+}
+
+func TestShouldRetryWithoutHostKeyAlgorithms(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{
+			name: "nil error",
+			err:  nil,
+			want: false,
+		},
+		{
+			name: "no common algorithm for host key",
+			err:  errors.New("ssh: no common algorithm for host key; client offered: [ssh-ed25519], server offered: [ecdsa-sha2-nistp384]"),
+			want: true,
+		},
+		{
+			name: "no common algorithm uppercase",
+			err:  errors.New("ssh: handshake failed: SSH: NO COMMON ALGORITHM FOR HOST KEY"),
+			want: true,
+		},
+		{
+			name: "authentication failure should not retry",
+			err:  errors.New("ssh: handshake failed: ssh: unable to authenticate, attempted methods [password], no supported methods remain"),
+			want: false,
+		},
+		{
+			name: "connection refused should not retry",
+			err:  errors.New("dial tcp 192.168.1.1:22: connect: connection refused"),
+			want: false,
+		},
+		{
+			name: "host key changed should not retry",
+			err:  errors.New("ssh: host key mismatch"),
+			want: false,
+		},
+		{
+			name: "no common algorithm for kex (not host key) should not retry",
+			err:  errors.New("ssh: no common algorithm for key exchange"),
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := shouldRetryWithoutHostKeyAlgorithms(tt.err); got != tt.want {
+				t.Errorf("shouldRetryWithoutHostKeyAlgorithms(%v) = %v, want %v", tt.err, got, tt.want)
+			}
+		})
 	}
 }

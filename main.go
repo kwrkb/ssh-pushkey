@@ -9,6 +9,7 @@ import (
 	"runtime/debug"
 	"strings"
 
+	"golang.org/x/crypto/ssh"
 	"golang.org/x/term"
 )
 
@@ -138,7 +139,24 @@ func keyFromAgent() (string, bool) {
 	if key == "" {
 		return "", false
 	}
-	return key, true
+	validated, err := validatePubKeyLine(key)
+	if err != nil {
+		return "", false
+	}
+	return validated, true
+}
+
+// validatePubKeyLine は単一行の公開鍵文字列を ssh.ParseAuthorizedKey で検証し、
+// 前後の空白を除去した値を返す。フォーマット不正時はエラーを返す。
+func validatePubKeyLine(line string) (string, error) {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" {
+		return "", fmt.Errorf("public key line is empty")
+	}
+	if _, _, _, _, err := ssh.ParseAuthorizedKey([]byte(trimmed)); err != nil {
+		return "", fmt.Errorf("invalid public key format: %w", err)
+	}
+	return trimmed, nil
 }
 
 // findNewestPubKey returns the path to the newest ~/.ssh/id_*.pub file by mtime.
@@ -190,13 +208,23 @@ func readPubKey(path string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("cannot read public key file: %w", err)
 	}
-	key := strings.TrimSpace(string(data))
-	if key == "" {
+
+	var nonEmpty []string
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.TrimSpace(line) != "" {
+			nonEmpty = append(nonEmpty, line)
+		}
+	}
+	if len(nonEmpty) == 0 {
 		return "", fmt.Errorf("public key file is empty: %s", path)
 	}
-	parts := strings.Fields(key)
-	if len(parts) < 2 {
-		return "", fmt.Errorf("invalid public key format: %s", path)
+	if len(nonEmpty) > 1 {
+		return "", fmt.Errorf("public key file must contain exactly one key: %s", path)
+	}
+
+	key, err := validatePubKeyLine(nonEmpty[0])
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", path, err)
 	}
 	return key, nil
 }
