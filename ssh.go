@@ -43,13 +43,29 @@ func dialSSH(user, host string, port int, password string, insecure bool) (*ssh.
 
 	addr := fmt.Sprintf("%s:%d", host, port)
 	client, err := ssh.Dial("tcp", addr, config)
-	if err != nil && len(hostKeyAlgorithms) > 0 {
-		// HostKeyAlgorithmsの制限によりハンドシェイクが失敗した場合、
+	if err != nil && len(hostKeyAlgorithms) > 0 && shouldRetryWithoutHostKeyAlgorithms(err) {
+		// HostKeyAlgorithmsの制限でハンドシェイクが失敗した場合のみ、
 		// 制限を外してリトライし、HostKeyCallbackのインタラクティブ更新に委ねる。
+		// 認証失敗等の場合は再試行せず、パスワードの再送によるロックアウトを避ける。
 		config.HostKeyAlgorithms = nil
 		return ssh.Dial("tcp", addr, config)
 	}
 	return client, err
+}
+
+// shouldRetryWithoutHostKeyAlgorithms はhost key algorithm制限を外して
+// 再試行すべきエラーかを判定する。
+// Go の x/crypto/ssh は鍵アルゴリズム交渉失敗時に sentinel error を返さず
+// fmt.Errorf 由来の文字列を返すため、文字列ベースで判定する。
+func shouldRetryWithoutHostKeyAlgorithms(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	if strings.Contains(msg, "unable to authenticate") {
+		return false
+	}
+	return strings.Contains(msg, "no common algorithm") && strings.Contains(msg, "host key")
 }
 
 // createHostKeyCallback はknown_hostsファイルを使用したホスト鍵検証コールバックを作成する。
