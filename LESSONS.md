@@ -97,3 +97,17 @@
 ### Go ユニットテストで実鍵を使うときは固定値を const 化する
 - `ssh.ParseAuthorizedKey` を通すには実 base64 で構成された正規の公開鍵が必要。テストごとに `ssh-keygen` 生成すると再現性がなく CI で揺れる
 - **ルール**: フォーマット検証を伴う Go テストでは正規データを `const` で固定化し、複数テストで共有する。生成スクリプトに依存させない
+
+## bot レビューコメント対応 (2026-05-30)
+
+### bot 提案の「エッジケース改善」は実装前に検証可能性を確認する
+- codex から sshd -T -C の `addr=127.0.0.1` 固定を実クライアントアドレスに変えるよう提案された。`Match Address` ルールが存在する環境では正しいが、(a) 実機テスト環境がloopback接続のため実シナリオを検証不可、(b) 実装に `SSH_CONNECTION` の populated 有無と `sshd -T -C` の host 省略可否の事前検証が必要、(c) `buildDeployScript` は2固定パスにしか書き込まないため改善インパクトが限定的、という3点が重なった
+- **ルール**: bot 提案の改善を採用する前に「テスト環境でエンドツーエンド検証できるか」を確認する。できない場合は実装前提条件をまとめて follow-up Issue 化し、コード変更なしでスキップする
+
+### `sshd -T -C` でアドレスを修正するとき addr と host は一貫させる
+- `addr` だけ実クライアント値にして `host=localhost` を残すと、`Match Host localhost` ルールが意図せず発火し別の誤判定を引き起こす（正しい `addr` で接続中なのに `localhost` 向け設定が適用される）
+- **ルール**: `sshd -T -C` のコンテキストを修正するときは `addr`/`host`/`laddr`/`lport` を同一ソース（例: `$env:SSH_CONNECTION`）から統一して派生させる。片方だけ変えない。env 未設定時は現状の `localhost`/`127.0.0.1` にフォールバック
+
+### PowerShell の新規セッションでは `$LASTEXITCODE` は `$null`（`0` ではない）
+- `runRemotePowerShell` は毎回独立したセッションを開く。そこでは `$LASTEXITCODE` は `$null` から始まり、PowerShell では `$null -eq 0` が false になる。「前のコマンドが成功のまま残った `$LASTEXITCODE` が 0 だから誤動作」というシナリオは発火しない
+- **ルール**: リモート PowerShell スクリプトの `$LASTEXITCODE` 依存ロジックを評価するときは、セッションが新規かどうかを確認する。新規セッションでは `$LASTEXITCODE` は `$null` なので「前コマンドの残り値」問題は起きない。`$ErrorActionPreference = 'Stop'` の追加は defense-in-depth であり、この前提を理解した上で採用する
