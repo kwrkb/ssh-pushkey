@@ -144,46 +144,51 @@ Gemini・Codex・Claude の3者で議論。
 3. `SSH_ASKPASS` サポート（低優先度、TTY 前提で一貫しており現時点では不要）
 4. PowerShell スクリプトの `text/template` 化（低優先度、現規模では過剰。分岐増加時に再評価）
 
-### 11-1: SSH再試行条件の絞り込み
+### 11-1: SSH再試行条件の絞り込み（完了）
 
 **問題**: `HostKeyAlgorithms` を使った初回接続が失敗したとき、原因を問わず制限解除して再試行してしまう
 
 **方針**: `shouldRetryWithoutHostKeyAlgorithms(err)` ヘルパーを導入し、再試行判定を明確化する
 
-- [ ] `shouldRetryWithoutHostKeyAlgorithms(err error) bool` ヘルパー関数を作成
+- [x] `shouldRetryWithoutHostKeyAlgorithms(err error) bool` ヘルパー関数を作成
   - `"no common algorithm"` かつ `"host key"` を含む → true（鍵アルゴリズム交渉失敗）
   - `"unable to authenticate"` を含む → false（認証失敗）
   - その他 → false（保守的判定）
-- [ ] `dialSSH` のリトライ条件をヘルパーに置き換える
-- [ ] ヘルパー関数のユニットテスト追加（`ssh_test.go`）
+- [x] `dialSSH` のリトライ条件をヘルパーに置き換える
+- [x] ヘルパー関数のユニットテスト追加（`ssh_test.go`）
 
 **変更対象ファイル**: `ssh.go`, `ssh_test.go`
 
-### 11-2: 公開鍵入力の厳格化（最優先）
+### 11-2: 公開鍵入力の厳格化（完了）
 
 **問題**: `.pub` ファイルの内容検証が緩く、複数行・連結済み入力をそのまま配備できてしまう
 
 **方針**: 非空行が1行であることを確認し、`ssh.ParseAuthorizedKey` で検証。複数行は黙殺せず reject
 
-- [ ] `readPubKey` で空行除去後、非空行が1行であることを確認（2行以上はエラー）
-- [ ] `ssh.ParseAuthorizedKey` でフォーマット検証
-- [ ] `resolveKey()` 経由の鍵も同じ検証パスを通す（将来の ssh-agent 入力も統一）
-- [ ] `readPubKey` の正常系・異常系テストを追加する
+- [x] `readPubKey` で空行除去後、非空行が1行であることを確認（2行以上はエラー）
+- [x] `ssh.ParseAuthorizedKey` でフォーマット検証
+- [x] `resolveKey()` 経由の鍵も同じ検証パスを通す（将来の ssh-agent 入力も統一）
+- [x] `readPubKey` の正常系・異常系テストを追加する
 
 **変更対象ファイル**: `main.go`, `main_test.go`
 
-### 11-3: 管理者鍵ファイル判定の一般化
+### 11-3: 管理者鍵ファイル判定の一般化（完了）
 
 **問題**: `administrators_authorized_keys` 判定が `Match Group administrators` ブロック内の `AuthorizedKeysFile` だけに依存している
 
 **方針**: `sshd -T` 優先 → 現行パースにフォールバック → 確信なければ user 側配備 + 警告
 
-- [ ] `useAdminKeyFile` を bool → 構造体（配備先パス + 判定理由）に設計変更
-- [ ] `sshd -T` をリモート実行し `authorizedkeysfile` の実効値を取得する処理を追加
-- [ ] `sshd -T` 失敗時は現行の `sshd_config` パースにフォールバック
-- [ ] 確信できない場合は user 側に配備 + 明示警告（「成功に見えてログインできない」を回避）
-- [ ] Linux 接続時は早期エラー（Windows 専用であることを明示）— Gemini 指摘対応
-- [ ] 構成差分をカバーするテストを追加する
+- [x] `useAdminKeyFile` を bool → 構造体（配備先パス + 判定理由）に設計変更
+  > `useAdminKeyFile(client) bool` → `resolveKeyFileTarget(client) (keyFileTarget, error)` に置換。`keyFileTarget{isAdmin bool, reason string}` で配置先と判定理由を保持。
+- [x] `sshd -T` をリモート実行し `authorizedkeysfile` の実効値を取得する処理を追加
+  > `sshd -T -C "user=$u,host=localhost,addr=127.0.0.1"` で Match 評価済み実効値を取得。`effectiveAdminKeysFromSshdT(output)` pure 関数で解析（大小無視・CRLF 対応）。
+- [x] `sshd -T` 失敗時は現行の `sshd_config` パースにフォールバック
+  > `SSHD_T_OK` マーカー未検出・`runRemotePowerShell` エラー時に既存の `Get-Content` + ステートマシンパースへ移行。
+- [x] 確信できない場合は user 側に配備 + 明示警告（「成功に見えてログインできない」を回避）
+- [x] Linux 接続時は早期エラー（Windows 専用であることを明示）— Gemini 指摘対応
+  > `looksLikeNonWindows(output)` pure 関数で "command not found" / "not recognized as" 等のシグナルを検出し error を返す。
+- [x] 構成差分をカバーするテストを追加する
+  > `TestEffectiveAdminKeysFromSshdT`（admin/user/マーカーなし/CRLF/大文字小文字）、`TestLooksLikeNonWindows` を `deploy_test.go` に追加。
 
 **変更対象ファイル**: `deploy.go`, `deploy_test.go`, `integration_test.go`
 

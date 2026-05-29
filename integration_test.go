@@ -83,9 +83,12 @@ func TestIntegration_AdminDetection(t *testing.T) {
 	}
 	defer client.Close()
 
-	// パニックせず結果を返すことを確認（True/False どちらでもOK）
-	result := useAdminKeyFile(client)
-	t.Logf("useAdminKeyFile = %v", result)
+	// パニックせず結果を返すことを確認（isAdmin True/False どちらでもOK）
+	target, err := resolveKeyFileTarget(client)
+	if err != nil {
+		t.Fatalf("resolveKeyFileTarget failed: %v", err)
+	}
+	t.Logf("target = %+v", target)
 }
 
 func TestIntegration_DeployKey(t *testing.T) {
