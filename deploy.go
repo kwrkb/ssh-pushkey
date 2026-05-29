@@ -86,6 +86,10 @@ func looksLikeNonWindows(output string) bool {
 		"powershell: not found",
 		"bash:",
 		"sh:",
+		"unknown command",
+		"no such file or directory",
+		"not supported on this platform",
+		"platformnotsupported",
 	} {
 		if strings.Contains(lower, sig) {
 			return true
@@ -118,6 +122,7 @@ func resolveKeyFileTarget(client *ssh.Client) (keyFileTarget, error) {
 	// Step 2: sshd -T で Match 評価済み実効値を取得
 	fmt.Println("=> Checking effective sshd configuration (sshd -T)...")
 	sshdTScript := `
+$ErrorActionPreference = 'Stop'
 $u = $env:USERNAME
 try {
     $out = & sshd -T -C "user=$u,host=localhost,addr=127.0.0.1" 2>$null
