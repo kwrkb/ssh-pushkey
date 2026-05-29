@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Explicit error when connecting to a non-Windows host; ssh-pushkey targets Windows OpenSSH servers
+
+### Changed
+
+- Resolve the effective `AuthorizedKeysFile` via `sshd -T -C` (Match-aware) before falling back to textual `sshd_config` parsing, so admin-key detection handles configurations beyond a literal `Match Group administrators` block
+
 ## [1.4.1] - 2026-04-29
 
 ### Security
@@ -34,10 +42,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Interactive `yes/no` prompt to update `~/.ssh/known_hosts` when the remote host key has changed; approved entries are automatically appended
 - Support hashed known_hosts entries (`HashKnownHosts yes`) with HMAC-SHA1 verification
 - New TOFU entries preserve hashed format when existing known_hosts contains hashed entries
 - Host key replacement preserves hashed format consistently across all code paths
 - Unit tests for `matchHashedHost` and `hostMatchesAddr` helpers
+
+### Changed
+
+- Constrain `HostKeyAlgorithms` to algorithms already present in `known_hosts`; retry without the constraint when host-key algorithm negotiation fails, supporting key rotation without manual `known_hosts` edits
+
+### Fixed
+
+- Rewrite multi-alias `known_hosts` lines via field reconstruction instead of `strings.Replace`, eliminating false matches on Base64 content; remaining aliases are preserved when a single host entry is removed
 
 ## [1.1.2] - 2026-03-10
 

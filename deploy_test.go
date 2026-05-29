@@ -124,3 +124,93 @@ func TestBuildDeployScript_NoHardcodedPrincipalNames(t *testing.T) {
 		}
 	}
 }
+
+func TestEffectiveAdminKeysFromSshdT(t *testing.T) {
+	cases := []struct {
+		name    string
+		input   string
+		isAdmin bool
+		ok      bool
+	}{
+		{
+			name:    "admin keys enabled — multiple paths",
+			input:   "SSHD_T_OK\nport 22\nauthorizedkeysfile __PROGRAMDATA__/ssh/administrators_authorized_keys .ssh/authorized_keys\n",
+			isAdmin: true,
+			ok:      true,
+		},
+		{
+			name:    "user keys only",
+			input:   "SSHD_T_OK\nauthorizedkeysfile .ssh/authorized_keys\n",
+			isAdmin: false,
+			ok:      true,
+		},
+		{
+			name:    "no SSHD_T_OK marker",
+			input:   "SSHD_T_FAILED\n",
+			isAdmin: false,
+			ok:      false,
+		},
+		{
+			name:    "no authorizedkeysfile line",
+			input:   "SSHD_T_OK\nport 22\nprotocol 2\n",
+			isAdmin: false,
+			ok:      false,
+		},
+		{
+			name:    "case-insensitive key",
+			input:   "SSHD_T_OK\nAuthorizedKeysFile administrators_authorized_keys\n",
+			isAdmin: true,
+			ok:      true,
+		},
+		{
+			name:    "CRLF line endings",
+			input:   "SSHD_T_OK\r\nauthorizedkeysfile administrators_authorized_keys\r\n",
+			isAdmin: true,
+			ok:      true,
+		},
+		{
+			name:    "empty output",
+			input:   "",
+			isAdmin: false,
+			ok:      false,
+		},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			gotAdmin, gotOk := effectiveAdminKeysFromSshdT(c.input)
+			if gotOk != c.ok {
+				t.Errorf("ok: got %v, want %v", gotOk, c.ok)
+			}
+			if gotAdmin != c.isAdmin {
+				t.Errorf("isAdmin: got %v, want %v", gotAdmin, c.isAdmin)
+			}
+		})
+	}
+}
+
+func TestLooksLikeNonWindows(t *testing.T) {
+	cases := []struct {
+		name   string
+		input  string
+		expect bool
+	}{
+		{"command not found", "bash: powershell: command not found", true},
+		{"not recognized as", "'powershell' is not recognized as an internal or external command", true},
+		{"powershell not found", "powershell: not found", true},
+		{"bash prefix", "bash: line 1: powershell: command not found", true},
+		{"sh prefix", "sh: powershell: not found", true},
+		{"normal windows output — True", "True", false},
+		{"empty output", "", false},
+		{"windows error message", "The system cannot find the file specified.", false},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := looksLikeNonWindows(c.input)
+			if got != c.expect {
+				t.Errorf("looksLikeNonWindows(%q) = %v, want %v", c.input, got, c.expect)
+			}
+		})
+	}
+}
