@@ -108,6 +108,16 @@
 - `addr` だけ実クライアント値にして `host=localhost` を残すと、`Match Host localhost` ルールが意図せず発火し別の誤判定を引き起こす（正しい `addr` で接続中なのに `localhost` 向け設定が適用される）
 - **ルール**: `sshd -T -C` のコンテキストを修正するときは `addr`/`host`/`laddr`/`lport` を同一ソース（例: `$env:SSH_CONNECTION`）から統一して派生させる。片方だけ変えない。env 未設定時は現状の `localhost`/`127.0.0.1` にフォールバック
 
+## CLI help 改善 (2026-06-04)
+
+### Go `flag` パッケージで `-h` ショートハンドを使うには明示的に定義する
+- `flag.Bool("help", ...)` を定義すると `flag` は `-help` を処理するが `-h` は未定義扱いのまま残る。そのため `-h` を渡すと `flag: help requested` で stderr + exit 2 になる。Gemini レビューで発見
+- **ルール**: `-h` も有効にする場合は `flag.BoolVar(showHelp, "h", false, "print help")` で同じポインタに紐付ける。別変数を用意して `||` で判定するより簡潔でバグが少ない
+
+### `flag.PrintDefaults()` は `<value-name>` を出せないため help に使わない
+- `flag.PrintDefaults()` は `-i string` / `-p int` のように Go の型名を出力するだけで、`-i <path>` のような意味のある value 名を表示できない。エージェント向け help として情報が不足する
+- **ルール**: エージェントが読める help を作る場合は `flag.PrintDefaults()` を廃止して手書きの `const usageText` に一本化する。`flag.Usage` と明示 `--help` フラグの両方から同じ定数を参照することで二重管理を避ける
+
 ### PowerShell の新規セッションでは `$LASTEXITCODE` は `$null`（`0` ではない）
 - `runRemotePowerShell` は毎回独立したセッションを開く。そこでは `$LASTEXITCODE` は `$null` から始まり、PowerShell では `$null -eq 0` が false になる。「前のコマンドが成功のまま残った `$LASTEXITCODE` が 0 だから誤動作」というシナリオは発火しない
 - **ルール**: リモート PowerShell スクリプトの `$LASTEXITCODE` 依存ロジックを評価するときは、セッションが新規かどうかを確認する。新規セッションでは `$LASTEXITCODE` は `$null` なので「前コマンドの残り値」問題は起きない。`$ErrorActionPreference = 'Stop'` の追加は defense-in-depth であり、この前提を理解した上で採用する
