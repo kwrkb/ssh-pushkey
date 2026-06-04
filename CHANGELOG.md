@@ -7,9 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-06-04
+
 ### Added
 
 - Explicit error when connecting to a non-Windows host; ssh-pushkey targets Windows OpenSSH servers
+- Improved `--help` output: self-description line, `<required>`/`[optional]` notation, Arguments section with example, auto-discover fallback details for `-i`, and Examples section
+- `-h` shorthand as alias for `--help` (stdout + exit 0)
 
 ### Changed
 
