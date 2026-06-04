@@ -121,3 +121,17 @@
 ### PowerShell の新規セッションでは `$LASTEXITCODE` は `$null`（`0` ではない）
 - `runRemotePowerShell` は毎回独立したセッションを開く。そこでは `$LASTEXITCODE` は `$null` から始まり、PowerShell では `$null -eq 0` が false になる。「前のコマンドが成功のまま残った `$LASTEXITCODE` が 0 だから誤動作」というシナリオは発火しない
 - **ルール**: リモート PowerShell スクリプトの `$LASTEXITCODE` 依存ロジックを評価するときは、セッションが新規かどうかを確認する。新規セッションでは `$LASTEXITCODE` は `$null` なので「前コマンドの残り値」問題は起きない。`$ErrorActionPreference = 'Stop'` の追加は defense-in-depth であり、この前提を理解した上で採用する
+
+## 依存脆弱性対応とリリース (2026-06-04)
+
+### govulncheck は PR 前・リリース前に必ず実行する
+- `golang.org/x/crypto@v0.48.0` に到達可能な脆弱性が 7 件含まれており、knownhosts の `@revoked` バイパス（GO-2026-5021）など本ツールの中核機能に直撃するものもあった。通常の `go test` / `go vet` では検出できない
+- **ルール**: セキュリティ修正・依存更新・リリース前に `govulncheck ./...` を実行する。exit 0（到達可能な脆弱性 0 件）を確認してからタグを打つ
+
+### x/crypto を上げると x/sys / x/term も連動して上がる
+- `go get golang.org/x/crypto@latest` 単体では `go.sum` の他モジュールが古い状態になる場合がある。`go mod tidy` を続けて実行することで x/sys・x/term が正しいバージョンに揃う
+- **ルール**: `go get <module>@latest && go mod tidy` をセットで実行する。`go get` だけで終わらない
+
+### GitHub Actions のアクションバージョンは Node.js ランタイムに依存する
+- `actions/checkout@v4` / `actions/setup-go@v5` は Node.js 20 ベースで動作し、2026-06-16 以降 Node.js 24 が強制されると動作しなくなる警告が出た。メジャーバージョン（v5→v6）で Node.js バージョンが切り替わる
+- **ルール**: GitHub Actions ワークフローを触った際に deprecation 警告があれば、同じタイミングでアクションのメジャーバージョンも上げる。`gh api repos/actions/<name>/releases/latest --jq .tag_name` で最新バージョンを確認できる
