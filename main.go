@@ -53,6 +53,7 @@ func main() {
 	insecure := flag.Bool("insecure", false, "skip host key verification (vulnerable to MITM)")
 	showVersion := flag.Bool("version", false, "print version")
 	showHelp := flag.Bool("help", false, "print help")
+	flag.BoolVar(showHelp, "h", false, "print help")
 	flag.Usage = func() {
 		fmt.Fprint(os.Stderr, usageText)
 	}
