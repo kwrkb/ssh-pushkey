@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.5.1] - 2026-06-04
+
+### Security
+
+- Upgraded `golang.org/x/crypto` v0.48.0 → v0.52.0 to resolve 7 reachable vulnerabilities (GO-2026-5013, GO-2026-5015, GO-2026-5017, GO-2026-5018, GO-2026-5019, GO-2026-5020, GO-2026-5021), including an authentication bypass in `knownhosts` (GO-2026-5021)
+
 ## [1.5.0] - 2026-06-04
 
 ### Added
