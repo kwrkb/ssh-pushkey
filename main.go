@@ -15,6 +15,29 @@ import (
 
 var version = "dev"
 
+const usageText = `ssh-pushkey - deploy an SSH public key to a Windows OpenSSH server (ssh-copy-id for Windows)
+
+Usage: ssh-pushkey [options] <user@host>
+
+Prompts for the password, then deploys the key handling Windows specifics
+automatically (BOM-less UTF-8, Administrators branching, icacls ACL).
+
+Arguments:
+  <user@host>            target Windows SSH server (e.g., admin@192.168.1.10)
+
+Options:
+  -i <path>              public key file to deploy (default: first key from ssh-agent,
+                         then newest ~/.ssh/id_*.pub)
+  -p <port>              SSH port number (default: 22)
+  --insecure             skip host key verification (vulnerable to MITM)
+  --help                 print this help
+  --version              print version
+
+Examples:
+  ssh-pushkey admin@192.168.1.10                       # auto-discover key and deploy
+  ssh-pushkey -i ~/.ssh/id_rsa.pub -p 2222 user@host   # explicit key and port
+`
+
 func init() {
 	if version != "dev" {
 		return
@@ -25,15 +48,20 @@ func init() {
 }
 
 func main() {
-	keyPath := flag.String("i", "", "path to public key file")
+	keyPath := flag.String("i", "", "public key file to deploy")
 	port := flag.Int("p", 22, "SSH port number")
 	insecure := flag.Bool("insecure", false, "skip host key verification (vulnerable to MITM)")
-	showVersion := flag.Bool("version", false, "show version")
+	showVersion := flag.Bool("version", false, "print version")
+	showHelp := flag.Bool("help", false, "print help")
 	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "Usage: ssh-pushkey [-i identity_file] [-p port] [--insecure] user@host\n\n")
-		flag.PrintDefaults()
+		fmt.Fprint(os.Stderr, usageText)
 	}
 	flag.Parse()
+
+	if *showHelp {
+		fmt.Print(usageText)
+		os.Exit(0)
+	}
 
 	if *showVersion {
 		fmt.Printf("ssh-pushkey %s\n", version)
