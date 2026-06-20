@@ -3,6 +3,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -112,6 +113,104 @@ func TestIntegration_DeployKey(t *testing.T) {
 	// 2回目は重複スキップされることを確認
 	if err := DeployKey(client, pubKey, false); err != nil {
 		t.Fatalf("second deployment failed: %v", err)
+	}
+}
+
+// TestIntegration_DuplicateByBlob は blob 単位の重複判定（PowerShell 実行時挙動）を実機で検証する。
+// ユニットテストは生成スクリプトの文字列一致しか見られないため、実際の
+// Get-Content ループ / -split / -ceq 比較が意図通り動くかはここでしか確認できない。
+func TestIntegration_DuplicateByBlob(t *testing.T) {
+	env := loadTestEnv(t)
+
+	pubKey, _, err := resolveKey(os.Getenv("SSH_TEST_PUBKEY"))
+	if err != nil {
+		t.Fatalf("failed to read public key: %v", err)
+	}
+
+	client, err := dialSSH(env.user, env.host, env.port, env.password, true)
+	if err != nil {
+		t.Fatalf("SSH connection failed: %v", err)
+	}
+	defer client.Close()
+
+	// 鍵を配置しておく（既にあれば idempotent にスキップされる）
+	if err := DeployKey(client, pubKey, false); err != nil {
+		t.Fatalf("key deployment failed: %v", err)
+	}
+
+	target, err := resolveKeyFileTarget(client)
+	if err != nil {
+		t.Fatalf("resolveKeyFileTarget failed: %v", err)
+	}
+	blob, err := pubKeyBlob(pubKey)
+	if err != nil {
+		t.Fatalf("pubKeyBlob failed: %v", err)
+	}
+
+	// 核心: 同一 blob・別コメントでも重複と判定されること（dry-run の DRY_RUN_DUP を確認）
+	variant := blob + " a-different-comment@elsewhere"
+	out, err := runRemotePowerShell(client, buildDeployScript(variant, blob, target.isAdmin, true))
+	if err != nil {
+		t.Fatalf("dry-run (variant) failed: %v", err)
+	}
+	if !strings.Contains(out, "DRY_RUN_DUP:True") {
+		t.Errorf("same blob with a different comment must be detected as duplicate\noutput:\n%s", out)
+	}
+
+	// false-positive 防止: 別の鍵は重複と誤判定されないこと
+	otherBlob := "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINOTAREALKEYforDedupFalsePositiveCheck00"
+	out, err = runRemotePowerShell(client, buildDeployScript(otherBlob+" x@y", otherBlob, target.isAdmin, true))
+	if err != nil {
+		t.Fatalf("dry-run (other) failed: %v", err)
+	}
+	if !strings.Contains(out, "DRY_RUN_DUP:False") {
+		t.Errorf("a distinct key must not be flagged as duplicate\noutput:\n%s", out)
+	}
+
+	// options 前置行（command="..." <type> <base64> ...）でも鍵本体を検知できること。
+	// buildDeployScript と同じ式で $keyFile を決め、remote 側でバックアップ → option 行のみで上書き →
+	// dry-run スキャン → 必ず元へ復元する（残置すると実ホスト上の有効な authorization になるため）。
+	// 平文の鍵行も残すと壊れたスキャナでも True になり判別力が失われるので、敢えて option 行だけにする。
+	// バックアップ／復元は remote PowerShell 内で完結させ、ファイル内容を Go 側へ吸い上げない
+	// （runRemotePowerShell の出力には CLIXML 初期化ノイズが混ざり base64 を汚染するため）。
+	keyFileExpr := "$keyFile = Join-Path $env:USERPROFILE '.ssh\\authorized_keys'"
+	if target.isAdmin {
+		keyFileExpr = "$keyFile = 'C:\\ProgramData\\ssh\\administrators_authorized_keys'"
+	}
+	bakExpr := keyFileExpr + "; $bak = \"$keyFile.pushkey-test-bak\""
+
+	// バックアップ（既存 bak は除去してから、元ファイルがあればコピー）。
+	if _, err := runRemotePowerShell(client, bakExpr+
+		"; if (Test-Path $bak) { Remove-Item -Force $bak }"+
+		"; if (Test-Path $keyFile) { Copy-Item $keyFile $bak }"); err != nil {
+		t.Fatalf("failed to back up authorized_keys: %v", err)
+	}
+
+	defer func() {
+		// 復元: bak があれば戻す（move なので bak も消える）。無ければ元々ファイル無しなので option 行ファイルを削除。
+		restore := bakExpr +
+			"; if (Test-Path $bak) { Move-Item -Force $bak $keyFile } " +
+			"else { if (Test-Path $keyFile) { Remove-Item -Force $keyFile } }"
+		if _, rerr := runRemotePowerShell(client, restore); rerr != nil {
+			t.Errorf("failed to restore authorized_keys (manual cleanup may be required): %v", rerr)
+		}
+	}()
+
+	// command="..." 付きで test 鍵 blob を唯一の行として書き込む（UTF-8 BOM なし、末尾改行付き）。
+	optionLine := `command="echo hi" ` + blob + " injected-with-options"
+	escapedLine := strings.ReplaceAll(optionLine, "'", "''")
+	if _, err := runRemotePowerShell(client, keyFileExpr+fmt.Sprintf(
+		"; $enc = New-Object System.Text.UTF8Encoding($false); [IO.File]::WriteAllText($keyFile, '%s' + \"`n\", $enc)",
+		escapedLine)); err != nil {
+		t.Fatalf("failed to inject option-bearing line: %v", err)
+	}
+
+	out, err = runRemotePowerShell(client, buildDeployScript(pubKey, blob, target.isAdmin, true))
+	if err != nil {
+		t.Fatalf("dry-run (option-bearing) failed: %v", err)
+	}
+	if !strings.Contains(out, "DRY_RUN_DUP:True") {
+		t.Errorf("a key present on an options-prefixed line must be detected as duplicate\noutput:\n%s", out)
 	}
 }
 

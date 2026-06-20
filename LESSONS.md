@@ -43,6 +43,29 @@
 - GitHub(origin)/GitLab(gitlab) 両方に PR/MR がある状態で、各プラットフォーム UI から独立にマージするとマージコミット SHA が割れて master 履歴が分岐する
 - **ルール**: デュアルリモートのマージは「ローカル master で `git merge --no-ff <branch>` → `git push origin master && git push gitlab master`」で同一履歴を両方に流す。ブランチ HEAD が master の祖先になるため PR/MR は merged として自動クローズされる。複数 PR を順に取り込む際は usageText/CHANGELOG 等で必ず衝突するので、解決後に diff を確認し、意図的に除いた行（例: 別ブランチの dry-run 行）を取りこぼさない
 
+## blob 単位重複判定 / known_hosts アトミック書き込み (2026-06-20)
+
+### authorized_keys の鍵照合はトークンのスライド窓で `(type, base64)` を探す
+- 重複判定を blob 単位にする際、各行を `\s+` 分割して先頭2フィールド `$parts[0] + ' ' + $parts[1]` だけ比較すると、`command="..." ssh-ed25519 AAAA...` のような options 前置行で先頭が type にならず検知漏れする。旧 `Select-String` 全行一致からのデグレで、毎回重複追記される（Codex P2）
+- **ルール**: authorized_keys の行から鍵本体を取り出すときは、行頭固定でなく**トークンを2つずつスライドさせて `(type, base64)` ペアを `-ceq`（base64 は大小区別必須）で照合**する。options やコメントが前後に付いても鍵ペアはトークン2連として残るため、これで options 行も正しく検知できる。`for` の内側 `break` は for だけ抜けるので、外側 `foreach` 用に `if ($exists) { break }` を別途置く
+- `$i -lt $parts.Count - 1` は PowerShell では `$i -lt ($parts.Count - 1)`（加算が比較より優先）と解釈されるので境界は正しい
+
+### 「テストが通る」が修正を証明しない場合がある — 判別力のある経路で検証する
+- ユニットテストが生成スクリプトに `-ceq $keyBlob` 文字列が**含まれること**だけを検証していると、バグ版でも修正版でも同じ部分文字列が存在するため `go test ./...` は両方で green になる。options 行を実際に検知できるかは PowerShell 実行時にしか分からず、ユニットテストはこの修正に対し**ゼロ検証**だった（advisor 指摘）
+- **ルール**: 修正の正否を本当に分けるのが実行時挙動（PowerShell ランタイム等）なら、証明はその経路（統合テスト）に置く。「ユニットが green」を修正済みの根拠として報告しない。判別力テストは「バグ版なら False / 修正版だけ True」になる入力を用意する（例: 平文鍵行を残すと壊れたスキャナでも True になるので、敢えて option 行のみにする）
+
+### runRemotePowerShell の出力で**ファイル内容を Go 側に往復させない**
+- 統合テストで authorized_keys を base64 退避→Go で保持→復元しようとしたら、`runRemotePowerShell` の出力に CLIXML 初期化ノイズ（`Preparing modules for first use.`）が混ざり、退避 base64 が汚染されて `FromBase64String` が落ち、復元失敗で**実ホストの authorized_keys が注入した option 行のまま残った**
+- **ルール**: リモートのファイル内容を退避・復元する処理は、データを Go 側へ吸い上げず**remote PowerShell 内で完結**させる（`Copy-Item`/`Move-Item` で `.bak` 兄弟ファイルに退避→復元）。CLIXML 混入の影響を受けるのは「出力をデータとして取り込む」場面なので、検証は `strings.Contains` で済む一方、データ往復は別経路にする
+
+### 実ホストを破壊する統合テストは復元を堅牢にし、自己修復不能性も想定する
+- 上記の復元失敗で残った option 行は、修正後の重複判定が blob を検知して**スキップするため、ただ再デプロイしても平文鍵が復活しない**（先に削除が必要）。「とりあえず再実行」では直らない状態に陥った
+- **ルール**: 実ホスト状態を書き換える統合テストは (1) `defer` で必ず復元し、(2) 復元失敗は `t.Fatalf` でなく `t.Errorf` にして他の cleanup を妨げず、(3) 復元手順自体が壊れにくい方式（remote 内完結）を採る。破壊系テストを足すときは「復元が失敗したらホストはどう壊れ、どう戻すか」まで設計に含める
+
+### known_hosts の安全な書き換えは flock でなく temp+rename
+- truncate+write は部分書き込みで known_hosts を破損し得るが、flock 導入は新依存／build-tag のプラットフォーム別コードを招き、非ロックの書き手（実 `ssh`）も防げず過剰。破損経路は truncate のみで、TOFU 追記は既に `O_APPEND` で原子的
+- **ルール**: 単一ファイルの破損防止は、まず**同一ディレクトリの temp に書いて `os.Rename`**（OpenSSH 自身の known_hosts 更新と同方式）で足りないか検討する。読み手は常に旧 or 新の完全なファイルだけを見る。残る同時 yes の lost-update は次回 TOFU で自己修復する良性として受容してよい。temp は必ず宛先と同ディレクトリに作る（別 FS だと rename が非原子）
+
 ## PowerShellリモート実行の修正 (2026-03-09)
 
 ### Windows SSH経由のPowerShellコマンドは-EncodedCommandを使う
