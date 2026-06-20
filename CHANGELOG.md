@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Resolve `~/.ssh/config` for the target: a `<host>` may now be a `Host` alias, with `HostName`, `User` and `Port` resolved from the matching block. Resolution applies to any matching `Host` pattern (including `Host *`), not just explicit aliases, so a plain `user@host` also picks up matching config values. Precedence is CLI (`user@`, `-p`) > ssh_config > built-in default. `known_hosts` is keyed on the resolved `HostName`. `ProxyJump`, `HostKeyAlias`, `Match` and `IdentityFile` are not honored (`-i` is the public key to deploy, unrelated to `IdentityFile`); a missing or unparseable config is ignored gracefully.
+
 ## [1.5.1] - 2026-06-04
 
 ### Security

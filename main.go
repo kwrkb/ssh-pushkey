@@ -7,8 +7,10 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime/debug"
+	"strconv"
 	"strings"
 
+	"github.com/kevinburke/ssh_config"
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/term"
 )
@@ -17,18 +19,24 @@ var version = "dev"
 
 const usageText = `ssh-pushkey - deploy an SSH public key to a Windows OpenSSH server (ssh-copy-id for Windows)
 
-Usage: ssh-pushkey [options] <user@host>
+Usage: ssh-pushkey [options] <[user@]host>
 
 Prompts for the password, then deploys the key handling Windows specifics
 automatically (BOM-less UTF-8, Administrators branching, icacls ACL).
 
+A <host> may be a Host alias from ~/.ssh/config; HostName, User and Port are
+resolved from it (CLI flags and an explicit user@ take precedence). ProxyJump,
+IdentityFile and Match are not honored. Note: -i is the public key to DEPLOY,
+not an SSH identity — it is unrelated to ssh_config IdentityFile.
+
 Arguments:
-  <user@host>            target Windows SSH server (e.g., admin@192.168.1.10)
+  <[user@]host>          target Windows SSH server or ~/.ssh/config Host alias
+                         (e.g., admin@192.168.1.10, or just myserver)
 
 Options:
   -i <path>              public key file to deploy (default: first key from ssh-agent,
                          then newest ~/.ssh/id_*.pub)
-  -p <port>              SSH port number (default: 22)
+  -p <port>              SSH port number (default: 22, or Port from ~/.ssh/config)
   --insecure             skip host key verification (vulnerable to MITM)
   --help                 print this help
   --version              print version
@@ -36,6 +44,7 @@ Options:
 Examples:
   ssh-pushkey admin@192.168.1.10                       # auto-discover key and deploy
   ssh-pushkey -i ~/.ssh/id_rsa.pub -p 2222 user@host   # explicit key and port
+  ssh-pushkey myserver                                 # resolve User/HostName/Port from ~/.ssh/config
 `
 
 func init() {
@@ -74,7 +83,15 @@ func main() {
 		os.Exit(1)
 	}
 
-	user, host, err := parseTarget(flag.Arg(0))
+	// -p が明示指定されたかを判定（CLI > ssh_config > 既定 の優先順位に使う）
+	portExplicit := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "p" {
+			portExplicit = true
+		}
+	})
+
+	user, host, resolvedPort, err := resolveConnection(loadUserSSHConfig(), flag.Arg(0), *port, portExplicit)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
@@ -88,14 +105,14 @@ func main() {
 
 	fmt.Printf("=> Public key loaded: %s\n", keySource)
 
-	fmt.Printf("=> Connecting to %s@%s:%d...\n", user, host, *port)
+	fmt.Printf("=> Connecting to %s@%s:%d...\n", user, host, resolvedPort)
 	password, err := promptPassword(fmt.Sprintf("%s@%s's password: ", user, host))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
 
-	client, err := dialSSH(user, host, *port, password, *insecure)
+	client, err := dialSSH(user, host, resolvedPort, password, *insecure)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: SSH connection failed: %v\n", err)
 		os.Exit(1)
@@ -224,12 +241,85 @@ func findNewestPubKeyIn(sshDir string) (string, error) {
 	return newest, nil
 }
 
-func parseTarget(target string) (user, host string, err error) {
-	parts := strings.SplitN(target, "@", 2)
-	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-		return "", "", fmt.Errorf("invalid target: %q (expected user@host)", target)
+// sshConfigGetter resolves an ssh_config keyword for a host alias.
+// It returns "" with a nil error when the keyword is not set.
+type sshConfigGetter func(alias, key string) (string, error)
+
+// loadUserSSHConfig returns a getter backed by ~/.ssh/config.
+// A missing file yields a getter that resolves nothing; a parse error is
+// reported to stderr and likewise resolves nothing (graceful degradation —
+// the connection still works without the alias). Only HostName/User/Port are
+// ever consulted (see resolveConnection). IdentityFile is intentionally NOT
+// read: the -i flag is the public key to DEPLOY, not an SSH auth identity, and
+// this tool authenticates with a password.
+func loadUserSSHConfig() sshConfigGetter {
+	empty := func(string, string) (string, error) { return "", nil }
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return empty
 	}
-	return parts[0], parts[1], nil
+	f, err := os.Open(filepath.Join(home, ".ssh", "config"))
+	if err != nil {
+		return empty
+	}
+	defer f.Close()
+	cfg, err := ssh_config.Decode(f)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: ignoring ~/.ssh/config (%v)\n", err)
+		return empty
+	}
+	return cfg.Get
+}
+
+// resolveConnection determines the effective user/host/port from the CLI target,
+// the -p flag, and ~/.ssh/config. Precedence per field:
+// explicit CLI (user@, -p) > ssh_config > built-in default.
+// Only HostName/User/Port are honored; ProxyJump/IdentityFile/HostKeyAlias/Match
+// are unsupported. known_hosts is keyed on the resolved HostName (OpenSSH default).
+func resolveConnection(get sshConfigGetter, rawTarget string, cliPort int, portExplicit bool) (user, host string, port int, err error) {
+	user, alias := splitUserHost(rawTarget)
+	if alias == "" {
+		return "", "", 0, fmt.Errorf("invalid target: %q (expected [user@]host)", rawTarget)
+	}
+
+	// HostName: use the configured value as the connect address, else the alias.
+	host = alias
+	if hn, _ := get(alias, "HostName"); hn != "" {
+		host = hn
+	}
+
+	// User: explicit user@ wins; otherwise ssh_config User; otherwise error.
+	if user == "" {
+		if cu, _ := get(alias, "User"); cu != "" {
+			user = cu
+		}
+	}
+	if user == "" {
+		return "", "", 0, fmt.Errorf("no user for %q (use user@host or set 'User' in ~/.ssh/config)", alias)
+	}
+
+	// Port: explicit -p wins; otherwise ssh_config Port; otherwise default 22.
+	port = cliPort
+	if !portExplicit {
+		if cp, _ := get(alias, "Port"); cp != "" {
+			if p, perr := strconv.Atoi(cp); perr == nil && p > 0 {
+				port = p
+			}
+		}
+	}
+	if port <= 0 {
+		port = 22
+	}
+	return user, host, port, nil
+}
+
+// splitUserHost splits "user@host" on the first "@". With no "@", user is empty
+// and the whole string is the host (alias). An empty host is rejected by the caller.
+func splitUserHost(target string) (user, host string) {
+	if i := strings.IndexByte(target, '@'); i >= 0 {
+		return target[:i], target[i+1:]
+	}
+	return "", target
 }
 
 func readPubKey(path string) (string, error) {
