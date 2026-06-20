@@ -26,6 +26,24 @@ ssh-pushkey user@host
 
 Enter your password and the rest is fully automated.
 
+### SSH config (`~/.ssh/config`)
+
+The `<host>` argument may be a `Host` alias from `~/.ssh/config`. `HostName`,
+`User` and `Port` are resolved from the matching block:
+
+```bash
+ssh-pushkey myserver        # resolves User/HostName/Port from ~/.ssh/config
+```
+
+Precedence is **CLI > ssh_config > built-in default**: an explicit `user@` or
+`-p` always wins over the config. `known_hosts` is keyed on the resolved
+`HostName` (OpenSSH default behavior).
+
+Not honored: `ProxyJump`, `HostKeyAlias`, `Match`, and `IdentityFile`. Note that
+`-i` is the **public key to deploy**, which is unrelated to `IdentityFile`
+(ssh-pushkey authenticates with a password). A missing or unparseable config is
+ignored gracefully.
+
 ### Default key discovery
 
 When `-i` is not specified, ssh-pushkey discovers a public key automatically (same logic as `ssh-copy-id`):
@@ -41,7 +59,7 @@ Supported key types include `ed25519`, `rsa`, `ecdsa`, and FIDO/U2F (`sk-ssh-ed2
 | Flag | Default | Description |
 |------|---------|-------------|
 | `-i` | *(auto-discover)* | Path to the public key file |
-| `-p` | `22` | SSH port number |
+| `-p` | `22` | SSH port number (or `Port` from `~/.ssh/config`) |
 | `--insecure` | `false` | Skip host key verification (not recommended) |
 | `--version` | - | Show version |
 
@@ -53,6 +71,9 @@ ssh-pushkey admin@192.168.1.10
 
 # Specify key and port
 ssh-pushkey -i ~/.ssh/id_rsa.pub -p 2222 user@server
+
+# Use a ~/.ssh/config Host alias
+ssh-pushkey myserver
 ```
 
 ## What it does
