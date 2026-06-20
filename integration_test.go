@@ -214,6 +214,98 @@ func TestIntegration_DuplicateByBlob(t *testing.T) {
 	}
 }
 
+// TestIntegration_AppendToFileWithoutTrailingNewline は、末尾改行なしで終わる既存の
+// authorized_keys へ鍵を追記しても新旧の鍵が1行に連結しない（末尾改行ガードが実機で効く）
+// ことを検証する。ユニットテストは生成スクリプトの文字列順序しか見られず、PowerShell の
+// ReadAllBytes 判定 / AppendAllText の実挙動はここでしか確認できない。
+func TestIntegration_AppendToFileWithoutTrailingNewline(t *testing.T) {
+	env := loadTestEnv(t)
+
+	pubKey, _, err := resolveKey(os.Getenv("SSH_TEST_PUBKEY"))
+	if err != nil {
+		t.Fatalf("failed to read public key: %v", err)
+	}
+	blob, err := pubKeyBlob(pubKey)
+	if err != nil {
+		t.Fatalf("pubKeyBlob failed: %v", err)
+	}
+
+	client, err := dialSSH(env.user, env.host, env.port, env.password, true)
+	if err != nil {
+		t.Fatalf("SSH connection failed: %v", err)
+	}
+	defer client.Close()
+
+	target, err := resolveKeyFileTarget(client)
+	if err != nil {
+		t.Fatalf("resolveKeyFileTarget failed: %v", err)
+	}
+
+	// $keyFile の決定は buildDeployScript と同じ式に合わせる。
+	keyFileExpr := "$keyFile = Join-Path $env:USERPROFILE '.ssh\\authorized_keys'"
+	if target.isAdmin {
+		keyFileExpr = "$keyFile = 'C:\\ProgramData\\ssh\\administrators_authorized_keys'"
+	}
+	bakExpr := keyFileExpr + "; $bak = \"$keyFile.pushkey-test-bak\""
+
+	// バックアップ（既存 bak は除去 → 元ファイルがあればコピー）。.ssh ディレクトリが無いと
+	// WriteAllText が失敗するため作成しておく。
+	if _, err := runRemotePowerShell(client, bakExpr+
+		"; $d = Split-Path -Parent $keyFile; if (-not (Test-Path $d)) { New-Item -ItemType Directory -Path $d -Force | Out-Null }"+
+		"; if (Test-Path $bak) { Remove-Item -Force $bak }"+
+		"; if (Test-Path $keyFile) { Copy-Item $keyFile $bak }"); err != nil {
+		t.Fatalf("failed to back up authorized_keys: %v", err)
+	}
+
+	defer func() {
+		// 復元: bak があれば戻す。無ければ元々ファイル無しなのでテスト生成ファイルを削除。
+		restore := bakExpr +
+			"; if (Test-Path $bak) { Move-Item -Force $bak $keyFile } " +
+			"else { if (Test-Path $keyFile) { Remove-Item -Force $keyFile } }"
+		if _, rerr := runRemotePowerShell(client, restore); rerr != nil {
+			t.Errorf("failed to restore authorized_keys (manual cleanup may be required): %v", rerr)
+		}
+	}()
+
+	// 配置する鍵とは別 blob の既存行を、末尾改行なし（核心条件）で書き込む。
+	// 別 blob なので DeployKey は重複と判定せず必ず追記する。
+	seedLine := "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITRAILINGNEWLINESEEDKEY000000000000000 seed@host"
+	escapedSeed := strings.ReplaceAll(seedLine, "'", "''")
+	if _, err := runRemotePowerShell(client, keyFileExpr+fmt.Sprintf(
+		"; $enc = New-Object System.Text.UTF8Encoding($false); [IO.File]::WriteAllText($keyFile, '%s', $enc)",
+		escapedSeed)); err != nil {
+		t.Fatalf("failed to seed file without trailing newline: %v", err)
+	}
+
+	// 実書き込み（dry-run でない）で鍵を追記する。
+	if err := DeployKey(client, pubKey, false); err != nil {
+		t.Fatalf("key deployment failed: %v", err)
+	}
+
+	// 検証は remote 側で完結させ、行数と blob 存在のみをマーカー出力する
+	// （ファイル内容を Go 側へ吸い上げると CLIXML 初期化ノイズが混ざるため）。
+	escapedBlob := strings.ReplaceAll(blob, "'", "''")
+	check := keyFileExpr + fmt.Sprintf(
+		"; $lines = @(Get-Content $keyFile | Where-Object { $_.Trim() -ne '' })"+
+			"; Write-Output \"LINECOUNT:$($lines.Count)\""+
+			"; $hasNew = ($lines | Where-Object { $_ -like '*%s*' }).Count"+
+			"; Write-Output \"HASNEW:$hasNew\"",
+		escapedBlob)
+	out, err := runRemotePowerShell(client, check)
+	if err != nil {
+		t.Fatalf("failed to inspect appended file: %v", err)
+	}
+
+	// 末尾改行なしファイルでも seed 行と新鍵が別行になり、合計2行であること。
+	// 連結バグが再発すると1行になり LINECOUNT:1 となる。
+	if !strings.Contains(out, "LINECOUNT:2") {
+		t.Errorf("appending to a file without a trailing newline must keep keys on separate lines (want 2 lines)\noutput:\n%s", out)
+	}
+	if !strings.Contains(out, "HASNEW:1") {
+		t.Errorf("the newly deployed key must be present on its own line\noutput:\n%s", out)
+	}
+}
+
 func trimOutput(s string) string {
 	// PowerShellの出力にはCRLFが含まれる
 	b := []byte(s)
