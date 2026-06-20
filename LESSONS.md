@@ -66,6 +66,20 @@
 - truncate+write は部分書き込みで known_hosts を破損し得るが、flock 導入は新依存／build-tag のプラットフォーム別コードを招き、非ロックの書き手（実 `ssh`）も防げず過剰。破損経路は truncate のみで、TOFU 追記は既に `O_APPEND` で原子的
 - **ルール**: 単一ファイルの破損防止は、まず**同一ディレクトリの temp に書いて `os.Rename`**（OpenSSH 自身の known_hosts 更新と同方式）で足りないか検討する。読み手は常に旧 or 新の完全なファイルだけを見る。残る同時 yes の lost-update は次回 TOFU で自己修復する良性として受容してよい。temp は必ず宛先と同ディレクトリに作る（別 FS だと rename が非原子）
 
+## GoReleaser 採用（配布基盤）(2026-06-20)
+
+### GoReleaser 設定はタグを打つ前にローカルで検証する
+- `.goreleaser.yaml` の不備はタグ（`v*`）push でしか発火せず、失敗すると「実タグ上に半端なリリース」が残る高コストな失敗モードになる。`formats:`（複数形）か `format:`（単数）かといったスキーマ差はバージョン依存で、記憶で断定すると壊れる（v2.16 では `formats:` が正、`goreleaser check` が判定してくれた）
+- **ルール**: GoReleaser 導入・変更時はマージ前に必ずローカル検証する。(1) **CI と同じメジャー版を入れる**（`go install github.com/goreleaser/goreleaser/v2@latest`。無印パスは v1 を引く恐れ）、(2) `goreleaser check` で構文・スキーマ、(3) `goreleaser release --snapshot --clean` + `ls dist/` で**実際にアーカイブ・checksums が生成されるか**まで確認、(4) 生成バイナリの `--version` で ldflags 注入を確認。タグはこのゲートを通してから打つ
+
+### デュアルリモートの GoReleaser は「canonical 一本化」で複雑さを避ける
+- GoReleaser の1実行は1ホスト（`release.github` 等）にしか公開できない。GitHub/GitLab 両方にアーカイブを出すには host 判定・トークン・設定分岐が要り複雑化する
+- **ルール**: 配布の正本を片方（GitHub）に寄せ、もう片方の CI は据え置く。生じる成果物の非対称（GitHub=アーカイブ / GitLab=生バイナリ）は許容しつつ、PR 説明に「意図的な非対称」と**明記**して後年の誤読を防ぐ。既存挙動の保持（リリースノートは `CHANGELOG.md` から `--release-notes`、バージョンは `-X main.version={{ .Tag }}`）も確認する
+
+### 配布チャネルは段階導入し、土台と tap/bucket を分ける
+- 「配布を考えて」と Homebrew/Scoop まで一気に入れると、tap/bucket リポジトリ作成・トークン・README 導線更新が absorb され、スコープが膨らむ
+- **ルール**: まず archives + checksums の土台だけを入れ、Homebrew tap / Scoop bucket は別段階に切る。ユーザーが明示的に後回しにした配布チャネルを `.goreleaser.yaml` に先回りで足さない
+
 ## PowerShellリモート実行の修正 (2026-03-09)
 
 ### Windows SSH経由のPowerShellコマンドは-EncodedCommandを使う
