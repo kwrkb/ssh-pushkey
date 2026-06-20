@@ -112,7 +112,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	fmt.Println("=> Key deployment completed!")
+	if *dryRun {
+		fmt.Println("=> [DRY-RUN] Preview complete; no changes were made")
+	} else {
+		fmt.Println("=> Key deployment completed!")
+	}
 }
 
 // resolveKey returns the public key content and a human-readable source.
