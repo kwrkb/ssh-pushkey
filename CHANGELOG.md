@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Changed
 
 - Duplicate-key detection now compares only the key blob (type + base64), ignoring the comment field. A key that is already present under a different comment is now correctly recognized as a duplicate and skipped, instead of being appended again.
+- Module path moved to `github.com/kwrkb/ssh-pushkey` to match the primary repository. Install with `go install github.com/kwrkb/ssh-pushkey@latest` (the old `gitlab.com/...` path is no longer used). Binary downloads are unaffected.
 
 ### Fixed
 

@@ -1,4 +1,4 @@
-module gitlab.com/kwrkb/ssh-pushkey
+module github.com/kwrkb/ssh-pushkey
 
 go 1.26.0
 
