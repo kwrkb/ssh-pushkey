@@ -150,12 +150,47 @@ func TestBuildDeployScript_DryRun(t *testing.T) {
 	}
 	for _, sideEffect := range []string{
 		"[System.IO.File]::AppendAllText",
+		"[System.IO.File]::ReadAllBytes",
 		"icacls",
 		"New-Item",
 	} {
 		if idx := strings.Index(script, sideEffect); idx >= 0 && idx < dryRunExit {
 			t.Errorf("side effect %q appears before dry-run exit guard (would run in dry-run)\n\nscript:\n%s", sideEffect, script)
 		}
+	}
+}
+
+func TestBuildDeployScript_NewlineGuardBeforeAppend(t *testing.T) {
+	for _, isAdmin := range []bool{true, false} {
+		name := "normal"
+		if isAdmin {
+			name = "admin"
+		}
+		t.Run(name, func(t *testing.T) {
+			script := buildDeployScript("ssh-ed25519 AAAA test", "ssh-ed25519 AAAA", isAdmin, false)
+
+			// 末尾改行ガード（ReadAllBytes で最終バイトを検査）が追記より前にあること
+			guardIdx := strings.Index(script, "$existing = [System.IO.File]::ReadAllBytes($keyFile)")
+			appendIdx := strings.Index(script, "[System.IO.File]::AppendAllText")
+			if guardIdx < 0 {
+				t.Fatalf("script should contain trailing-newline guard\n\nscript:\n%s", script)
+			}
+			if appendIdx < 0 {
+				t.Fatalf("script should contain AppendAllText\n\nscript:\n%s", script)
+			}
+			if guardIdx > appendIdx {
+				t.Errorf("newline guard must precede AppendAllText\n\nscript:\n%s", script)
+			}
+
+			// 補った改行 $nl を鍵本体の前に連結して追記すること
+			if !strings.Contains(script, "AppendAllText($keyFile, $nl + $pubKey + \"`n\"") {
+				t.Errorf("AppendAllText should prepend $nl to $pubKey\n\nscript:\n%s", script)
+			}
+			// 末尾バイトが LF(10) かを判定していること
+			if !strings.Contains(script, "$existing[$existing.Length - 1] -ne 10") {
+				t.Errorf("guard should compare the last byte against LF (10)\n\nscript:\n%s", script)
+			}
+		})
 	}
 }
 
