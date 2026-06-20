@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 	"unicode/utf16"
 
 	"golang.org/x/crypto/ssh"
@@ -39,6 +40,9 @@ func dialSSH(user, host string, port int, password string, insecure bool) (*ssh.
 		},
 		HostKeyCallback:   hostKeyCallback,
 		HostKeyAlgorithms: hostKeyAlgorithms,
+		// Timeout は TCP dial 段階のみを縛る（ssh.Dial -> net.DialTimeout）。
+		// ハンドシェイク/認証段階は対象外だが、到達不能ホストの長時間ハングを防ぐ主目的には十分。
+		Timeout: 30 * time.Second,
 	}
 
 	addr := fmt.Sprintf("%s:%d", host, port)
