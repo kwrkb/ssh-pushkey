@@ -321,10 +321,40 @@ func replaceHostKeyInKnownHosts(knownHostsPath string, addr string, newKey ssh.P
 	line := knownhosts.Line(hostEntry, newKey)
 	content += line + "\n"
 
-	if err := os.WriteFile(knownHostsPath, []byte(content), 0600); err != nil {
+	// truncate+write は部分書き込みで known_hosts を破損させ得るため、
+	// 同一ディレクトリの temp に書いて rename する（OpenSSH 自身の known_hosts 更新と同方式）。
+	// 読み手は常に「旧 or 新の完全なファイル」のみを見る。
+	// 残る race は同時 yes 時の lost-update（片方の追記が消える）だが、これは破損ではなく
+	// 次回 TOFU で自己修復する良性のため受容する。TOFU の追記経路は O_APPEND で原子的。
+	if err := atomicWriteFile(knownHostsPath, []byte(content), 0600); err != nil {
 		return fmt.Errorf("cannot write known_hosts: %w", err)
 	}
 	return nil
+}
+
+// atomicWriteFile は同一ディレクトリの一時ファイルに書き込んでから rename することで、
+// 書き込み途中のクラッシュや同時アクセスによるファイル破損を防ぐ。
+// temp は必ず宛先と同じディレクトリに作る（別ファイルシステムだと rename が非原子になる）。
+func atomicWriteFile(path string, data []byte, perm os.FileMode) error {
+	dir := filepath.Dir(path)
+	tmp, err := os.CreateTemp(dir, ".known_hosts-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	defer os.Remove(tmpName) // rename 成功後は no-op、失敗時は後始末
+	if _, err := tmp.Write(data); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Chmod(perm); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmpName, path)
 }
 
 // readLineFromTerminal は端末から1行読み取る。
