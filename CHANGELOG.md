@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `-n` / `--dry-run` flag: preview the deployment target and whether the key already exists, without writing the key or changing ACLs (`ssh-copy-id -n` compatible). Still connects and prompts for the password, since the target is resolved on the remote host.
+
+### Changed
+
+- Connection now times out after 30 seconds at the TCP dial stage, preventing indefinite hangs against unreachable hosts.
+- ACL failures now propagate the underlying `icacls` error message (e.g. "Access is denied.") instead of a generic "failed to set ACL".
+
 ## [1.5.1] - 2026-06-04
 
 ### Security

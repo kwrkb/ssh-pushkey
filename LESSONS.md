@@ -1,5 +1,20 @@
 # LESSONS
 
+## 信頼性向上: dry-run / icacls エラー伝搬 (2026-06-20)
+
+### native コマンドの `2>&1` は `$ErrorActionPreference='Stop'` と相性が悪い（PS 5.1）
+- icacls 等の native コマンドの stderr を `$out = & icacls ... 2>&1` で捕捉する際、`ErrorActionPreference='Stop'` のままだと、コマンドが stderr に書いた瞬間に PowerShell が `NativeCommandError` を**終端エラーとして throw** し、後続の `if ($LASTEXITCODE -ne 0) { Write-Output 'MARKER' }` に到達しない。結果、失敗時にマーカーが出力されず Go 側で原因不明エラーになる
+- **ルール**: `$LASTEXITCODE` を明示チェックしている native コマンド区間では `Stop` は不要。`2>&1` で出力捕捉する直前に `$ErrorActionPreference = 'Continue'` に落とす。.NET メソッド（`AppendAllText` 等）の例外は ErrorActionPreference に依存せず throw するので、そちらの保護は別途維持される
+- マーカーには実エラーを `"ACL_SET_FAILED_DIR|$out"` の形で付加し、Go 側は `|` 以降を抽出してエラーメッセージに含める（トラブルシュート性向上）
+
+### dry-run は別スクリプトを作らず本番スクリプトにフラグ注入する
+- dry-run 用に `buildDryRunScript` を別途作ると、配置先パス決定・重複チェックのロジックが本番と二重化し、片方だけ修正してドリフトする危険がある
+- **ルール**: `buildDeployScript(pubKey, isAdmin, dryRun)` のように本番スクリプトに `$dryRun` を注入し、書き込み・ACL・ディレクトリ作成の**前**に `if ($dryRun) { ...; exit 0 }` ガードを置く。共通部分（パス決定・重複判定）は1経路に統一。静的テストは「副作用文が exit 0 ガードより後にある（実行時到達不能）」ことを順序で検証する
+
+### dry-run でも SSH 接続・パスワード入力は発生する
+- 配置先（admin/user 分岐）と重複判定はリモートの状態に依存するため、正確なプレビューには SSH 接続が必須。完全ローカルな dry-run は不正確になる
+- **ルール**: dry-run の仕様として「接続・パスワード入力は行うが書き込みはしない」ことを usage / README / CHANGELOG に明記する
+
 ## PowerShellリモート実行の修正 (2026-03-09)
 
 ### Windows SSH経由のPowerShellコマンドは-EncodedCommandを使う

@@ -29,6 +29,8 @@ Options:
   -i <path>              public key file to deploy (default: first key from ssh-agent,
                          then newest ~/.ssh/id_*.pub)
   -p <port>              SSH port number (default: 22)
+  -n, --dry-run          preview the deployment target without writing the key
+                         (still connects and prompts for the password)
   --insecure             skip host key verification (vulnerable to MITM)
   --help                 print this help
   --version              print version
@@ -51,6 +53,8 @@ func main() {
 	keyPath := flag.String("i", "", "public key file to deploy")
 	port := flag.Int("p", 22, "SSH port number")
 	insecure := flag.Bool("insecure", false, "skip host key verification (vulnerable to MITM)")
+	dryRun := flag.Bool("dry-run", false, "preview deployment without writing")
+	flag.BoolVar(dryRun, "n", false, "preview deployment without writing")
 	showVersion := flag.Bool("version", false, "print version")
 	showHelp := flag.Bool("help", false, "print help")
 	flag.BoolVar(showHelp, "h", false, "print help")
@@ -103,7 +107,7 @@ func main() {
 	defer client.Close()
 	fmt.Println("=> SSH connection established")
 
-	if err := DeployKey(client, pubKey); err != nil {
+	if err := DeployKey(client, pubKey, *dryRun); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: key deployment failed: %v\n", err)
 		os.Exit(1)
 	}
