@@ -168,30 +168,31 @@ func TestIntegration_DuplicateByBlob(t *testing.T) {
 	}
 
 	// options 前置行（command="..." <type> <base64> ...）でも鍵本体を検知できること。
-	// buildDeployScript と同じ式で $keyFile を決め、その内容を退避 → option 行のみで上書き →
+	// buildDeployScript と同じ式で $keyFile を決め、remote 側でバックアップ → option 行のみで上書き →
 	// dry-run スキャン → 必ず元へ復元する（残置すると実ホスト上の有効な authorization になるため）。
 	// 平文の鍵行も残すと壊れたスキャナでも True になり判別力が失われるので、敢えて option 行だけにする。
+	// バックアップ／復元は remote PowerShell 内で完結させ、ファイル内容を Go 側へ吸い上げない
+	// （runRemotePowerShell の出力には CLIXML 初期化ノイズが混ざり base64 を汚染するため）。
 	keyFileExpr := "$keyFile = Join-Path $env:USERPROFILE '.ssh\\authorized_keys'"
 	if target.isAdmin {
 		keyFileExpr = "$keyFile = 'C:\\ProgramData\\ssh\\administrators_authorized_keys'"
 	}
+	bakExpr := keyFileExpr + "; $bak = \"$keyFile.pushkey-test-bak\""
 
-	saved, err := runRemotePowerShell(client, keyFileExpr+
-		"; if (Test-Path $keyFile) { [Convert]::ToBase64String([IO.File]::ReadAllBytes($keyFile)) } else { 'NOFILE' }")
-	if err != nil {
-		t.Fatalf("failed to snapshot authorized_keys: %v", err)
+	// バックアップ（既存 bak は除去してから、元ファイルがあればコピー）。
+	if _, err := runRemotePowerShell(client, bakExpr+
+		"; if (Test-Path $bak) { Remove-Item -Force $bak }"+
+		"; if (Test-Path $keyFile) { Copy-Item $keyFile $bak }"); err != nil {
+		t.Fatalf("failed to back up authorized_keys: %v", err)
 	}
-	savedB64 := strings.TrimSpace(saved)
 
 	defer func() {
-		var restore string
-		if savedB64 == "NOFILE" {
-			restore = keyFileExpr + "; if (Test-Path $keyFile) { Remove-Item -Force $keyFile }"
-		} else {
-			restore = keyFileExpr + fmt.Sprintf("; [IO.File]::WriteAllBytes($keyFile, [Convert]::FromBase64String('%s'))", savedB64)
-		}
+		// 復元: bak があれば戻す（move なので bak も消える）。無ければ元々ファイル無しなので option 行ファイルを削除。
+		restore := bakExpr +
+			"; if (Test-Path $bak) { Move-Item -Force $bak $keyFile } " +
+			"else { if (Test-Path $keyFile) { Remove-Item -Force $keyFile } }"
 		if _, rerr := runRemotePowerShell(client, restore); rerr != nil {
-			t.Fatalf("failed to restore authorized_keys (manual cleanup may be required): %v", rerr)
+			t.Errorf("failed to restore authorized_keys (manual cleanup may be required): %v", rerr)
 		}
 	}()
 
