@@ -26,6 +26,21 @@ ssh-pushkey user@host
 
 パスワードを入力すれば、あとは全自動。
 
+### SSH config（`~/.ssh/config`）
+
+`<host>` には `~/.ssh/config` の `Host` エイリアスを指定できる。一致するブロックから
+`HostName` / `User` / `Port` を解決する:
+
+```bash
+ssh-pushkey myserver        # ~/.ssh/config から User/HostName/Port を解決
+```
+
+優先順位は **CLI > ssh_config > 組込デフォルト**。明示的な `user@` や `-p` は常に config より優先される。
+`known_hosts` は解決後の `HostName` でキーイングする（OpenSSH の既定挙動）。
+
+非対応: `ProxyJump` / `HostKeyAlias` / `Match` / `IdentityFile`。`-i` は**配置する公開鍵**であり
+`IdentityFile` とは無関係（ssh-pushkey はパスワード認証）。config が無い・壊れている場合は無視して続行する。
+
 ### デフォルト鍵の自動探索
 
 `-i` 未指定時、`ssh-copy-id` と同じロジックで公開鍵を自動探索する:
@@ -41,7 +56,7 @@ ssh-pushkey user@host
 | フラグ | デフォルト | 説明 |
 |--------|-----------|------|
 | `-i` | *（自動探索）* | 公開鍵ファイルのパス |
-| `-p` | `22` | SSH ポート番号 |
+| `-p` | `22` | SSH ポート番号（または `~/.ssh/config` の `Port`） |
 | `--insecure` | `false` | ホスト鍵検証をスキップ（非推奨） |
 | `--version` | - | バージョン表示 |
 
@@ -53,6 +68,9 @@ ssh-pushkey admin@192.168.1.10
 
 # 鍵とポートを指定
 ssh-pushkey -i ~/.ssh/id_rsa.pub -p 2222 user@server
+
+# ~/.ssh/config の Host エイリアスを使う
+ssh-pushkey myserver
 ```
 
 ## 何をしてくれるのか

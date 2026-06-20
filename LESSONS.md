@@ -1,5 +1,19 @@
 # LESSONS
 
+## ~/.ssh/config 解決 (2026-06-20)
+
+### kevinburke/ssh_config は package-level Get と *Config.Get でセマンティクスが違う
+- package-level `ssh_config.Get(alias, key)` は OpenSSH 既定値を補完する（未設定でも `Port`→"22" 等を返す）。一方 `Decode` で得た `*Config.Get` は**未設定キーは ""** を返す（実測で確認）。優先順位ロジックで「config に値があるか」を空文字判定する場合、既定補完されると判定が壊れる
+- **ルール**: 「設定されているか」を空文字で判定したいときは、`~/.ssh/config` を自前で `os.Open`→`ssh_config.Decode`→`cfg.Get` する。package-level `Get`/`GetStrict`（DefaultUserSettings 経由・既定補完あり・/etc/ssh も読む）に依存しない。これでテストの fake getter と本番のセマンティクスも一致する
+
+### ssh_config は alias だけでなく任意の一致 Host パターンに適用される
+- `Host *` のようなワイルドカードブロックがあると、`ssh-pushkey admin@1.2.3.4` のような素のホスト指定でも `Port`/`HostName`/`User` が解決される。「エイリアスを使ったときだけ」という思い込みは誤り
+- **ルール**: config 解決を入れたら CLI 明示（`user@` / `-p`）を常に優先させ（`flag.Visit` で `-p` 明示を検出）、ワイルドカード一致でも CLI が勝つことをテストで固定する。CHANGELOG/README にも「任意の一致 Host に適用」と明記する
+
+### `-i`（配置する公開鍵）は ssh_config の IdentityFile と無関係
+- 本ツールはパスワード認証で、`-i` は**リモートへ配置する公開鍵**。ssh_config の `IdentityFile`（認証鍵）とは意味が違う。安易に紐付けると将来「親切な修正」で壊される
+- **ルール**: `IdentityFile` は意図的に非対応とし、その旨をコード comment・README 両方に残す（片方だけだと見落とされる）
+
 ## PowerShellリモート実行の修正 (2026-03-09)
 
 ### Windows SSH経由のPowerShellコマンドは-EncodedCommandを使う
