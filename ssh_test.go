@@ -2,6 +2,8 @@ package main
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"golang.org/x/crypto/ssh/knownhosts"
@@ -111,5 +113,47 @@ func TestShouldRetryWithoutHostKeyAlgorithms(t *testing.T) {
 				t.Errorf("shouldRetryWithoutHostKeyAlgorithms(%v) = %v, want %v", tt.err, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestAtomicWriteFile_CreatesAndOverwrites(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "known_hosts")
+
+	// 新規作成
+	if err := atomicWriteFile(path, []byte("first\n"), 0600); err != nil {
+		t.Fatalf("atomicWriteFile (create): %v", err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if string(got) != "first\n" {
+		t.Errorf("content = %q, want %q", got, "first\n")
+	}
+
+	// 上書き（rename で置換）
+	if err := atomicWriteFile(path, []byte("second\n"), 0600); err != nil {
+		t.Fatalf("atomicWriteFile (overwrite): %v", err)
+	}
+	got, err = os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if string(got) != "second\n" {
+		t.Errorf("content = %q, want %q", got, "second\n")
+	}
+
+	// temp ファイルが残っていないこと
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("ReadDir: %v", err)
+	}
+	if len(entries) != 1 || entries[0].Name() != "known_hosts" {
+		var names []string
+		for _, e := range entries {
+			names = append(names, e.Name())
+		}
+		t.Errorf("expected only known_hosts to remain, got %v", names)
 	}
 }

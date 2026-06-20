@@ -248,6 +248,37 @@ func TestValidatePubKeyLine_Invalid(t *testing.T) {
 	}
 }
 
+func TestPubKeyBlob(t *testing.T) {
+	const blob = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIBwa4JTkbuiW41olDGfQiKbxFUH+2cU4Yqs1MWkyIAHX"
+
+	cases := []struct {
+		name string
+		in   string
+	}{
+		{"with comment", blob + " test@example"},
+		{"no comment", blob},
+		{"different comment same key", blob + " other-host"},
+		{"trailing whitespace", blob + " test@example  "},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got, err := pubKeyBlob(c.in)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != blob {
+				t.Errorf("pubKeyBlob(%q) = %q, want %q", c.in, got, blob)
+			}
+		})
+	}
+}
+
+func TestPubKeyBlob_Invalid(t *testing.T) {
+	if _, err := pubKeyBlob("not a key"); err == nil {
+		t.Error("expected error for invalid input, got nil")
+	}
+}
+
 // fakeGetter は ssh_config 解決をテストするためのマップバックト getter。
 // キーは "alias|Keyword"。未登録は "" を返す。
 func fakeGetter(m map[string]string) sshConfigGetter {

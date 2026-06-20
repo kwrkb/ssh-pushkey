@@ -8,15 +8,18 @@ import (
 )
 
 // buildDeployScript は鍵配置の PowerShell スクリプトを生成する。
+// keyBlob は重複判定用の鍵本体（type + base64、コメント除去済み）。
 // dryRun=true の場合は配置先パスと重複判定だけを出力し、書き込み・ACL 設定・
 // ディレクトリ作成は一切行わない（本番と同じパス決定・重複ロジックを共有してドリフトを防ぐ）。
-func buildDeployScript(pubKey string, isAdmin bool, dryRun bool) string {
+func buildDeployScript(pubKey, keyBlob string, isAdmin bool, dryRun bool) string {
 	escapedKey := strings.ReplaceAll(pubKey, "'", "''")
+	escapedBlob := strings.ReplaceAll(keyBlob, "'", "''")
 
 	var sb strings.Builder
 
 	sb.WriteString("$ErrorActionPreference = 'Stop'\n")
 	sb.WriteString(fmt.Sprintf("$pubKey = '%s'\n", escapedKey))
+	sb.WriteString(fmt.Sprintf("$keyBlob = '%s'\n", escapedBlob))
 	sb.WriteString(fmt.Sprintf("$dryRun = $%t\n", dryRun))
 
 	if isAdmin {
@@ -27,10 +30,22 @@ func buildDeployScript(pubKey string, isAdmin bool, dryRun bool) string {
 		sb.WriteString("$sshDir = Join-Path $env:USERPROFILE '.ssh'\n")
 	}
 
-	// 重複チェック（読み取りのみ。dry-run でも本番でも先に評価する）
+	// 重複チェック（読み取りのみ。dry-run でも本番でも先に評価する）。
+	// 鍵 blob（type + base64）のみで比較し、コメント差異があっても同一鍵を検知する。
+	// base64 は大小区別が必要なため -ceq（case-sensitive）で比較する。
+	// 各行のトークンを2つずつスライドさせて keyBlob と一致するか見るため、options 前置行
+	// （command="..." ssh-rsa AAAA...）でも鍵本体の (type, base64) ペアを正しく検知できる。
 	sb.WriteString("$exists = $false\n")
 	sb.WriteString("if (Test-Path $keyFile) {\n")
-	sb.WriteString("  if (Select-String -Path $keyFile -Pattern $pubKey -SimpleMatch -Quiet) { $exists = $true }\n")
+	sb.WriteString("  foreach ($line in (Get-Content $keyFile)) {\n")
+	sb.WriteString("    $t = $line.Trim()\n")
+	sb.WriteString("    if ($t -eq '' -or $t.StartsWith('#')) { continue }\n")
+	sb.WriteString("    $parts = $t -split '\\s+'\n")
+	sb.WriteString("    for ($i = 0; $i -lt $parts.Count - 1; $i++) {\n")
+	sb.WriteString("      if (($parts[$i] + ' ' + $parts[$i+1]) -ceq $keyBlob) { $exists = $true; break }\n")
+	sb.WriteString("    }\n")
+	sb.WriteString("    if ($exists) { break }\n")
+	sb.WriteString("  }\n")
 	sb.WriteString("}\n")
 
 	// dry-run: 配置先と重複状態だけを報告して終了（書き込み・ディレクトリ作成なし）
@@ -262,12 +277,17 @@ func DeployKey(client *ssh.Client, pubKey string, dryRun bool) error {
 	}
 	fmt.Printf("=> Target: %s\n", target.reason)
 
+	blob, err := pubKeyBlob(pubKey)
+	if err != nil {
+		return fmt.Errorf("cannot parse public key: %w", err)
+	}
+
 	if dryRun {
 		fmt.Println("=> [DRY-RUN] Previewing deployment (no changes will be made)...")
 	} else {
 		fmt.Println("=> Deploying public key...")
 	}
-	script := buildDeployScript(pubKey, target.isAdmin, dryRun)
+	script := buildDeployScript(pubKey, blob, target.isAdmin, dryRun)
 	output, err := runRemotePowerShell(client, script)
 	result := strings.TrimSpace(output)
 
