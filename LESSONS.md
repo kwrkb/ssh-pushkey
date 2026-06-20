@@ -29,6 +29,20 @@
 - 本ツールはパスワード認証で、`-i` は**リモートへ配置する公開鍵**。ssh_config の `IdentityFile`（認証鍵）とは意味が違う。安易に紐付けると将来「親切な修正」で壊される
 - **ルール**: `IdentityFile` は意図的に非対応とし、その旨をコード comment・README 両方に残す（片方だけだと見落とされる）
 
+## レビュー対応・デュアルリモートマージ (2026-06-20)
+
+### AI/bot の「コンパイルエラー」「API挙動」指摘は pin したバージョンの実ソースで検証する
+- Gemini が PR#6 で「`ssh.ClientConfig.Timeout` はハンドシェイクにも適用される（コメントが不正確）」、PR#7 で「`(*Config).Get` の戻り値は string のみでコンパイルエラーになる（critical）」と指摘したが、いずれも本リポジトリが pin した `golang.org/x/crypto v0.53.0` / `kevinburke/ssh_config v1.6.0` の実装には当てはまらなかった（前者は `config.Timeout` の参照が `net.DialTimeout` のみ、後者は `Get` が `(string, error)` を返しビルドも通過済み）。bot は別バージョンの実装を前提にしていた
+- **ルール**: bot の「コンパイルエラー」「この API はこう動く」系の指摘は、`grep -rn` で `$(go env GOMODCACHE)/<module>@<pinned-version>/` の実ソースを確認してから採否を決める。既にビルド/テストが通っている事実も有力な反証。検証結果（根拠付き）を PR にインライン返信して記録する
+
+### nil ガードは呼び出し元が制御できる非公開関数には足さない
+- Gemini が `resolveConnection` に `get == nil` ガードを提案したが、`get` は全呼び出し元（`loadUserSSHConfig` は常に非 nil getter を返す／テストも非 nil）で nil になり得なかった。内部関数の事前条件違反を空 getter にフォールバックして黙殺すると「config が無いように見える」挙動でバグを隠す
+- **ルール**: 非公開ヘルパーの nil ガードは、呼び出し元が nil を渡し得る場合のみ足す。制御された内部呼び出しのみなら fail-fast(panic) の方がバグを早く露見させる。「防御的だから」と一律に足さない
+
+### デュアルリモートはローカル `--no-ff` マージ → 両リモート push で SHA 割れを防ぐ
+- GitHub(origin)/GitLab(gitlab) 両方に PR/MR がある状態で、各プラットフォーム UI から独立にマージするとマージコミット SHA が割れて master 履歴が分岐する
+- **ルール**: デュアルリモートのマージは「ローカル master で `git merge --no-ff <branch>` → `git push origin master && git push gitlab master`」で同一履歴を両方に流す。ブランチ HEAD が master の祖先になるため PR/MR は merged として自動クローズされる。複数 PR を順に取り込む際は usageText/CHANGELOG 等で必ず衝突するので、解決後に diff を確認し、意図的に除いた行（例: 別ブランチの dry-run 行）を取りこぼさない
+
 ## PowerShellリモート実行の修正 (2026-03-09)
 
 ### Windows SSH経由のPowerShellコマンドは-EncodedCommandを使う
