@@ -1,5 +1,16 @@
 # LESSONS
 
+## 既存ファイルへの追記は末尾改行を保証する (2026-06-20)
+
+### 追記する前に既存ファイルの末尾改行を確認する
+
+- 既存ファイルへ単純に1行追記すると、そのファイルが**末尾改行なし**で終わっている場合、新しい行が直前の行に連結する。`authorized_keys` ではこれで新旧の鍵が両方とも認証不能になり、`known_hosts` ではエントリが破損する
+- 本ツール自身が書いたファイルは常に `\n` 終端なので安全だが、`administrators_authorized_keys` は MS 公式手順・他ツール・手動編集で作られることが多く、末尾改行なしが現実的に起こる。本家 `ssh-copy-id` はこのケースを明示的にガードしている
+- **ルール**: 既存ファイルへ追記する前にバイト単位で末尾を検査し、最後のバイトが LF(10) でなければ改行を1つ補ってから追記する。対象は `authorized_keys` 追記（`deploy.go` の PowerShell `$existing[$existing.Length - 1] -ne 10`）と `known_hosts` の TOFU 追記（`ssh.go` の `appendKnownHostsLine`）の両方
+- **注意**: 判定するのは LF(10) のみ。**CR(13) を「改行終端」に含めてはいけない**。CRLF でも末尾バイトは LF なので 10 判定で足り、`\r` のみで終わるファイルは「不完全な終端」として `\n` を補い CRLF へ正規化すべき。13 を改行扱いすると `keyA\rNEW` が sshd から1行に見えて連結バグが再発する
+- ファイル全体を読み直して書き戻す経路（`replaceHostKeyInKnownHosts` → `atomicWriteFile`）は末尾改行を再構成済みなので対象外。漏れやすいのは **O_APPEND / AppendAllText の単純追記**の方
+- **テスト**: 純粋な Go ヘルパー（`appendKnownHostsLine`）はユニットで末尾改行3パターンを検証。PowerShell 側は生成スクリプトの順序検証にとどまるため、末尾改行なしファイルへ追記して行数が増える（連結しない）ことを integration テスト（`TestIntegration_AppendToFileWithoutTrailingNewline`）で実機検証する
+
 ## 信頼性向上: dry-run / icacls エラー伝搬 (2026-06-20)
 
 ### native コマンドの `2>&1` は `$ErrorActionPreference='Stop'` と相性が悪い（PS 5.1）
