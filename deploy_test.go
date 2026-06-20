@@ -361,3 +361,63 @@ func TestLooksLikeNonWindows(t *testing.T) {
 		})
 	}
 }
+
+func TestSshdMatchSpecSuffixFromOutput(t *testing.T) {
+	const fallback = "host=localhost,addr=127.0.0.1"
+	// 実機 Windows OpenSSH の runRemotePowerShell が返す CLIXML 混入出力（先頭の "#< CLIXML"
+	// ヘッダ＋末尾の <Objs> プログレス XML に SSH_CONNECTION 行が挟まれる）。
+	const clixmlContaminated = "#< CLIXML\r\n127.0.0.1 45576 127.0.0.1 22\r\n" +
+		`<Objs Version="1.1.0.1" xmlns="http://schemas.microsoft.com/powershell/2004/04">` +
+		`<Obj S="progress" RefId="0"><MS><PR N="Record"><AV>Preparing modules for first use.</AV>` +
+		`<T>Completed</T></PR></MS></Obj></Objs>`
+
+	cases := []struct {
+		name   string
+		input  string
+		expect string
+	}{
+		{
+			name:   "IPv4 normal",
+			input:  "203.0.113.5 51234 198.51.100.2 22",
+			expect: "host=203.0.113.5,addr=203.0.113.5,laddr=198.51.100.2,lport=22",
+		},
+		{
+			name:   "IPv6",
+			input:  "::1 51234 ::1 22",
+			expect: "host=::1,addr=::1,laddr=::1,lport=22",
+		},
+		{
+			name:   "loopback IPv4",
+			input:  "127.0.0.1 5000 127.0.0.1 22",
+			expect: "host=127.0.0.1,addr=127.0.0.1,laddr=127.0.0.1,lport=22",
+		},
+		{
+			name:   "extra whitespace tolerated",
+			input:  "  203.0.113.5   51234   198.51.100.2   22  ",
+			expect: "host=203.0.113.5,addr=203.0.113.5,laddr=198.51.100.2,lport=22",
+		},
+		{
+			name:   "CLIXML-contaminated output → extracts the connection line",
+			input:  clixmlContaminated,
+			expect: "host=127.0.0.1,addr=127.0.0.1,laddr=127.0.0.1,lport=22",
+		},
+		{name: "empty → fallback", input: "", expect: fallback},
+		{name: "only CLIXML noise → fallback", input: "#< CLIXML\r\n<Objs Version=\"1.1.0.1\"></Objs>", expect: fallback},
+		{name: "too few fields → fallback", input: "203.0.113.5 51234 198.51.100.2", expect: fallback},
+		{name: "too many fields → fallback", input: "203.0.113.5 51234 198.51.100.2 22 extra", expect: fallback},
+		{name: "invalid client IP → fallback", input: "not-an-ip 51234 198.51.100.2 22", expect: fallback},
+		{name: "invalid server IP → fallback", input: "203.0.113.5 51234 nope 22", expect: fallback},
+		{name: "non-numeric port → fallback", input: "203.0.113.5 51234 198.51.100.2 ssh", expect: fallback},
+		{name: "port out of range → fallback", input: "203.0.113.5 51234 198.51.100.2 70000", expect: fallback},
+		{name: "port zero → fallback", input: "203.0.113.5 51234 198.51.100.2 0", expect: fallback},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := sshdMatchSpecSuffixFromOutput(c.input)
+			if got != c.expect {
+				t.Errorf("sshdMatchSpecSuffixFromOutput(%q) = %q, want %q", c.input, got, c.expect)
+			}
+		})
+	}
+}

@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"net"
+	"strconv"
 	"strings"
 
 	"golang.org/x/crypto/ssh"
@@ -173,6 +175,51 @@ func looksLikeNonWindows(output string) bool {
 	return false
 }
 
+// sshdMatchSpecFallback は SSH_CONNECTION が取得できない/不正な場合の `sshd -T -C` スペック断片。
+// 従来動作（loopback クライアント）へ安全に退避する。user= は含まない。
+const sshdMatchSpecFallback = "host=localhost,addr=127.0.0.1"
+
+// sshdMatchSpecSuffixFromOutput は runRemotePowerShell の出力から `sshd -T -C` のスペック断片
+// （user= を含まない）を生成する。PowerShell はモジュール初期化時に CLIXML プログレス
+// （"#< CLIXML" ヘッダや <Objs> XML）を出力に混入させるため、SSH_CONNECTION 形状に一致する
+// 最初の行を抽出する（effectiveAdminKeysFromSshdT と同じ「行スキャン」方針）。
+// 一致行が無ければ sshdMatchSpecFallback を返す。
+func sshdMatchSpecSuffixFromOutput(output string) string {
+	for _, line := range strings.Split(output, "\n") {
+		if suffix, ok := parseSSHConnectionSpec(strings.TrimSpace(line)); ok {
+			return suffix
+		}
+	}
+	return sshdMatchSpecFallback
+}
+
+// parseSSHConnectionSpec は単一の SSH_CONNECTION 値を検証し、`sshd -T -C` のスペック断片
+// （user= を含まない）を返す。形式不正なら ok=false。
+//
+// SSH_CONNECTION の形式は "<client_ip> <client_port> <server_ip> <server_port>"。
+//   - field[0] = client_ip   → addr / host（接続元アドレス。Match Address 評価の基準）
+//   - field[1] = client_port → 破棄（sshd -T -C に client-port キーは無い）
+//   - field[2] = server_ip   → laddr
+//   - field[3] = server_port → lport
+//
+// host も addr と同じ実 IP を設定する（loopback 偽装を避け、古い sshd の host 必須要件も満たす）。
+// 注入対策として各フィールドを IP / port 形式で検証し、1 つでも不正なら ok=false を返す。
+func parseSSHConnectionSpec(sshConnection string) (string, bool) {
+	fields := strings.Fields(sshConnection) // IPv6 もそのまま扱える
+	if len(fields) != 4 {
+		return "", false
+	}
+	clientIP, serverIP := fields[0], fields[2]
+	if net.ParseIP(clientIP) == nil || net.ParseIP(serverIP) == nil {
+		return "", false
+	}
+	serverPort, err := strconv.Atoi(fields[3])
+	if err != nil || serverPort < 1 || serverPort > 65535 {
+		return "", false
+	}
+	return fmt.Sprintf("host=%s,addr=%s,laddr=%s,lport=%d", clientIP, clientIP, serverIP, serverPort), true
+}
+
 // resolveKeyFileTarget は鍵の配置先を決定する。
 // sshd -T による Match 評価済み実効値を優先し、失敗時は sshd_config テキストパースにフォールバックする。
 func resolveKeyFileTarget(client *ssh.Client) (keyFileTarget, error) {
@@ -196,11 +243,20 @@ func resolveKeyFileTarget(client *ssh.Client) (keyFileTarget, error) {
 
 	// Step 2: sshd -T で Match 評価済み実効値を取得
 	fmt.Println("=> Checking effective sshd configuration (sshd -T)...")
-	sshdTScript := `
+
+	// 実際の接続元/先アドレスを SSH_CONNECTION から導出し、Match ルール（Match Address/Host 等）が
+	// loopback ではなく実接続に対して評価されるようにする。取得失敗時は localhost にフォールバック。
+	connOut, connErr := runRemotePowerShell(client, "Write-Output $env:SSH_CONNECTION")
+	specSuffix := sshdMatchSpecFallback
+	if connErr == nil {
+		specSuffix = sshdMatchSpecSuffixFromOutput(connOut)
+	}
+
+	sshdTScript := fmt.Sprintf(`
 $ErrorActionPreference = 'Stop'
 $u = $env:USERNAME
 try {
-    $out = & sshd -T -C "user=$u,host=localhost,addr=127.0.0.1" 2>$null
+    $out = & sshd -T -C "user=$u,%s" 2>$null
     if ($LASTEXITCODE -eq 0) {
         Write-Output 'SSHD_T_OK'
         $out | Write-Output
@@ -209,7 +265,7 @@ try {
     }
 } catch {
     Write-Output 'SSHD_T_FAILED'
-}`
+}`, specSuffix)
 	sshdTOut, sshdTErr := runRemotePowerShell(client, sshdTScript)
 	if sshdTErr == nil && strings.Contains(sshdTOut, "SSHD_T_OK") {
 		isAdmin, ok := effectiveAdminKeysFromSshdT(sshdTOut)
