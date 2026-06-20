@@ -33,15 +33,18 @@ func buildDeployScript(pubKey, keyBlob string, isAdmin bool, dryRun bool) string
 	// 重複チェック（読み取りのみ。dry-run でも本番でも先に評価する）。
 	// 鍵 blob（type + base64）のみで比較し、コメント差異があっても同一鍵を検知する。
 	// base64 は大小区別が必要なため -ceq（case-sensitive）で比較する。
-	// options 前置行（command="..." ssh-rsa ...）は先頭フィールドが type にならず
-	// 検知漏れし得るが、最悪でも「重複追記」になるだけで破損はしない（ssh-pushkey 自身の鍵では発生しない）。
+	// 各行のトークンを2つずつスライドさせて keyBlob と一致するか見るため、options 前置行
+	// （command="..." ssh-rsa AAAA...）でも鍵本体の (type, base64) ペアを正しく検知できる。
 	sb.WriteString("$exists = $false\n")
 	sb.WriteString("if (Test-Path $keyFile) {\n")
 	sb.WriteString("  foreach ($line in (Get-Content $keyFile)) {\n")
 	sb.WriteString("    $t = $line.Trim()\n")
 	sb.WriteString("    if ($t -eq '' -or $t.StartsWith('#')) { continue }\n")
 	sb.WriteString("    $parts = $t -split '\\s+'\n")
-	sb.WriteString("    if ($parts.Count -ge 2 -and ($parts[0] + ' ' + $parts[1]) -ceq $keyBlob) { $exists = $true; break }\n")
+	sb.WriteString("    for ($i = 0; $i -lt $parts.Count - 1; $i++) {\n")
+	sb.WriteString("      if (($parts[$i] + ' ' + $parts[$i+1]) -ceq $keyBlob) { $exists = $true; break }\n")
+	sb.WriteString("    }\n")
+	sb.WriteString("    if ($exists) { break }\n")
 	sb.WriteString("  }\n")
 	sb.WriteString("}\n")
 
