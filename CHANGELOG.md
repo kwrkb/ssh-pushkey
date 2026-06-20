@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.7.1] - 2026-06-21
+
 ### Changed
 
 - GitHub releases are now produced by [GoReleaser](https://goreleaser.com/). Each platform ships as an archive (`ssh-pushkey_<os>_<arch>.tar.gz`, `.zip` on Windows) alongside a `checksums.txt`, instead of bare binaries. Release notes still come from `CHANGELOG.md`. GitHub is the canonical distribution source; GitLab releases are unchanged.
