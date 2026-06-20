@@ -34,6 +34,14 @@ jobs:
       - uses: goreleaser/goreleaser-action@v6
         with:
           version: "~> v2"
-          args: release --clean --release-notes=/tmp/release-notes.md
+          args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # GoReleaser の `--release-notes` は changelog パイプ内で読み込まれるため、
+      # .goreleaser.yaml の `changelog.disable: true` でパイプごとスキップされ無視される。
+      # 配布物生成は GoReleaser に任せ、本文だけは公開後に CHANGELOG 抽出で明示設定する。
+      - name: Set release notes from CHANGELOG
+        run: gh release edit "$GITHUB_REF_NAME" --notes-file /tmp/release-notes.md
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
