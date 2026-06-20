@@ -194,6 +194,17 @@ Gemini・Codex・Claude の3者で議論。
 
 ## 将来の改善候補
 
+### 配布チャネル整備（GoReleaser 採用）（進行中 — PR #11 / MR !14）
+
+配布を見据え、GitHub リリースを GoReleaser 化（手動 `gh release create` から移行）。
+
+- [x] **方針決定**: GitHub canonical（GitHub のみ GoReleaser）。GitLab は `.gitlab-ci.yml` 据え置きで生バイナリのまま（非対称を許容）。
+- [x] スコープ: **アーカイブ + checksums のみ**。`.goreleaser.yaml`（builds 5 ターゲット／windows-arm64 除外、tar.gz・windows=zip、`checksums.txt`、`changelog: disable`、`release.github`）+ `release.yml` を goreleaser-action 化。
+- [x] 挙動保持: リリースノートは `CHANGELOG.md` から `--release-notes`、バージョンは `-X main.version={{ .Tag }}`。
+- [x] ローカル検証（マージゲート）: goreleaser v2.16.0 で `check` ✅ / `release --snapshot --clean` → 5 アーカイブ + checksums ✅ / `--version` で ldflags 注入確認 ✅。
+- [ ] マージ後、次タグ（v1.8.0 等）から有効化。
+- [ ] **後段（今回スコープ外）**: Homebrew tap / Scoop bucket。採用時は tap/bucket リポジトリ作成・トークン設定・README DL 導線更新を併せて決める。
+
 ### デフォルト公開鍵の探索強化（ssh-copy-id 互換）（完了）
 
 `-i` 未指定時に ssh-agent → `~/.ssh/id_*.pub` (mtime最新) の順で自動探索するように変更。
