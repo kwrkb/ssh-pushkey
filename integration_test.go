@@ -3,6 +3,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -164,6 +165,51 @@ func TestIntegration_DuplicateByBlob(t *testing.T) {
 	}
 	if !strings.Contains(out, "DRY_RUN_DUP:False") {
 		t.Errorf("a distinct key must not be flagged as duplicate\noutput:\n%s", out)
+	}
+
+	// options 前置行（command="..." <type> <base64> ...）でも鍵本体を検知できること。
+	// buildDeployScript と同じ式で $keyFile を決め、その内容を退避 → option 行のみで上書き →
+	// dry-run スキャン → 必ず元へ復元する（残置すると実ホスト上の有効な authorization になるため）。
+	// 平文の鍵行も残すと壊れたスキャナでも True になり判別力が失われるので、敢えて option 行だけにする。
+	keyFileExpr := "$keyFile = Join-Path $env:USERPROFILE '.ssh\\authorized_keys'"
+	if target.isAdmin {
+		keyFileExpr = "$keyFile = 'C:\\ProgramData\\ssh\\administrators_authorized_keys'"
+	}
+
+	saved, err := runRemotePowerShell(client, keyFileExpr+
+		"; if (Test-Path $keyFile) { [Convert]::ToBase64String([IO.File]::ReadAllBytes($keyFile)) } else { 'NOFILE' }")
+	if err != nil {
+		t.Fatalf("failed to snapshot authorized_keys: %v", err)
+	}
+	savedB64 := strings.TrimSpace(saved)
+
+	defer func() {
+		var restore string
+		if savedB64 == "NOFILE" {
+			restore = keyFileExpr + "; if (Test-Path $keyFile) { Remove-Item -Force $keyFile }"
+		} else {
+			restore = keyFileExpr + fmt.Sprintf("; [IO.File]::WriteAllBytes($keyFile, [Convert]::FromBase64String('%s'))", savedB64)
+		}
+		if _, rerr := runRemotePowerShell(client, restore); rerr != nil {
+			t.Fatalf("failed to restore authorized_keys (manual cleanup may be required): %v", rerr)
+		}
+	}()
+
+	// command="..." 付きで test 鍵 blob を唯一の行として書き込む（UTF-8 BOM なし、末尾改行付き）。
+	optionLine := `command="echo hi" ` + blob + " injected-with-options"
+	escapedLine := strings.ReplaceAll(optionLine, "'", "''")
+	if _, err := runRemotePowerShell(client, keyFileExpr+fmt.Sprintf(
+		"; $enc = New-Object System.Text.UTF8Encoding($false); [IO.File]::WriteAllText($keyFile, '%s' + \"`n\", $enc)",
+		escapedLine)); err != nil {
+		t.Fatalf("failed to inject option-bearing line: %v", err)
+	}
+
+	out, err = runRemotePowerShell(client, buildDeployScript(pubKey, blob, target.isAdmin, true))
+	if err != nil {
+		t.Fatalf("dry-run (option-bearing) failed: %v", err)
+	}
+	if !strings.Contains(out, "DRY_RUN_DUP:True") {
+		t.Errorf("a key present on an options-prefixed line must be detected as duplicate\noutput:\n%s", out)
 	}
 }
 
