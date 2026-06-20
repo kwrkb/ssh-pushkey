@@ -116,6 +116,48 @@ func TestShouldRetryWithoutHostKeyAlgorithms(t *testing.T) {
 	}
 }
 
+func TestAppendKnownHostsLine(t *testing.T) {
+	cases := []struct {
+		name    string
+		initial string // ファイル初期内容（"" は存在するが空のファイル）
+		want    string
+	}{
+		{
+			name:    "existing file without trailing newline gets a separator",
+			initial: "host1 ssh-ed25519 AAAA",
+			want:    "host1 ssh-ed25519 AAAA\nhost2 ssh-ed25519 BBBB\n",
+		},
+		{
+			name:    "existing file with trailing newline is not double-spaced",
+			initial: "host1 ssh-ed25519 AAAA\n",
+			want:    "host1 ssh-ed25519 AAAA\nhost2 ssh-ed25519 BBBB\n",
+		},
+		{
+			name:    "empty file gets no leading newline",
+			initial: "",
+			want:    "host2 ssh-ed25519 BBBB\n",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "known_hosts")
+			if err := os.WriteFile(path, []byte(c.initial), 0600); err != nil {
+				t.Fatalf("WriteFile: %v", err)
+			}
+			if err := appendKnownHostsLine(path, "host2 ssh-ed25519 BBBB"); err != nil {
+				t.Fatalf("appendKnownHostsLine: %v", err)
+			}
+			got, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("ReadFile: %v", err)
+			}
+			if string(got) != c.want {
+				t.Errorf("content = %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
 func TestAtomicWriteFile_CreatesAndOverwrites(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "known_hosts")

@@ -61,8 +61,18 @@ func buildDeployScript(pubKey, keyBlob string, isAdmin bool, dryRun bool) string
 	// ディレクトリ作成
 	sb.WriteString("if (-not (Test-Path $sshDir)) { New-Item -ItemType Directory -Path $sshDir -Force | Out-Null }\n")
 
+	// 既存ファイルが末尾改行で終わらない場合、追記前に改行を補い行連結による鍵破損を防ぐ。
+	// 手動・他ツール・MS 公式手順のスニペットで作られた authorized_keys は末尾改行なしのことが
+	// あり、そのまま追記すると新旧の鍵が1行に連結して両方とも認証不能になる（ssh-copy-id 本家準拠）。
+	// $ErrorActionPreference='Stop' 区間内のため読み取り失敗時は throw（追記も失敗するので整合的）。
+	sb.WriteString("$nl = ''\n")
+	sb.WriteString("if (Test-Path $keyFile) {\n")
+	sb.WriteString("  $existing = [System.IO.File]::ReadAllBytes($keyFile)\n")
+	sb.WriteString("  if ($existing.Length -gt 0 -and $existing[$existing.Length - 1] -ne 10) { $nl = \"`n\" }\n")
+	sb.WriteString("}\n")
+
 	// BOMなしUTF-8で追記
-	sb.WriteString("[System.IO.File]::AppendAllText($keyFile, $pubKey + \"`n\", (New-Object System.Text.UTF8Encoding $false))\n")
+	sb.WriteString("[System.IO.File]::AppendAllText($keyFile, $nl + $pubKey + \"`n\", (New-Object System.Text.UTF8Encoding $false))\n")
 
 	// ACL設定（SIDベース：言語非依存）
 	// S-1-5-18 = NT AUTHORITY\SYSTEM

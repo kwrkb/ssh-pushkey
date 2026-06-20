@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - GitHub releases are now produced by [GoReleaser](https://goreleaser.com/). Each platform ships as an archive (`ssh-pushkey_<os>_<arch>.tar.gz`, `.zip` on Windows) alongside a `checksums.txt`, instead of bare binaries. Release notes still come from `CHANGELOG.md`. GitHub is the canonical distribution source; GitLab releases are unchanged.
 
+### Fixed
+
+- Appending a key to an existing `authorized_keys` / `administrators_authorized_keys` that does **not** end in a newline no longer concatenates the new key onto the last existing line (which corrupted both keys and broke authentication). The deploy script now checks the file's final byte and inserts a separating newline when needed, matching `ssh-copy-id`'s behavior. Files this tool wrote were already safe; the bug affected files created manually or by other tools (common for `administrators_authorized_keys`).
+- Adding a new host entry to `known_hosts` (TOFU first-connect) applies the same trailing-newline guard, so a `known_hosts` file that does not end in a newline no longer has its last entry corrupted by the appended line.
+
 ## [1.7.0] - 2026-06-20
 
 ### Changed

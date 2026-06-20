@@ -170,14 +170,8 @@ func createHostKeyCallback(host string, port int) (ssh.HostKeyCallback, []string
 			hostEntry = knownhosts.HashHostname(addr)
 		}
 		line := knownhosts.Line([]string{hostEntry}, key)
-		f, err := os.OpenFile(knownHostsPath, os.O_APPEND|os.O_WRONLY, 0600)
-		if err != nil {
-			return fmt.Errorf("cannot write to known_hosts: %w", err)
-		}
-		defer f.Close()
-
-		if _, err := fmt.Fprintln(f, line); err != nil {
-			return fmt.Errorf("cannot write to known_hosts: %w", err)
+		if err := appendKnownHostsLine(knownHostsPath, line); err != nil {
+			return err
 		}
 
 		fmt.Printf("Warning: Permanently added '%s' to the list of known hosts.\n", addr)
@@ -355,6 +349,25 @@ func atomicWriteFile(path string, data []byte, perm os.FileMode) error {
 		return err
 	}
 	return os.Rename(tmpName, path)
+}
+
+// appendKnownHostsLine は known_hosts に1エントリを追記する。
+// 既存ファイルが末尾改行で終わっていない場合は先に改行を補い、新エントリが
+// 直前の行に連結して known_hosts が破損するのを防ぐ（authorized_keys 追記と同じ不変条件）。
+func appendKnownHostsLine(path, line string) error {
+	var leadingNL string
+	if data, err := os.ReadFile(path); err == nil && len(data) > 0 && data[len(data)-1] != '\n' {
+		leadingNL = "\n"
+	}
+	f, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		return fmt.Errorf("cannot write to known_hosts: %w", err)
+	}
+	defer f.Close()
+	if _, err := fmt.Fprintf(f, "%s%s\n", leadingNL, line); err != nil {
+		return fmt.Errorf("cannot write to known_hosts: %w", err)
+	}
+	return nil
 }
 
 // readLineFromTerminal は端末から1行読み取る。
