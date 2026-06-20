@@ -15,7 +15,7 @@ Connects via password authentication and automatically deploys your public key. 
 Download binaries from [GitLab Releases](https://gitlab.com/kwrkb/ssh-pushkey/-/releases) / [GitHub Releases](https://github.com/kwrkb/ssh-pushkey/releases), or:
 
 ```bash
-go install gitlab.com/kwrkb/ssh-pushkey@latest
+go install github.com/kwrkb/ssh-pushkey@latest
 ```
 
 ## Usage
