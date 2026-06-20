@@ -1,5 +1,16 @@
 # LESSONS
 
+## GoReleaser: changelog.disable は --release-notes も無効化する (2026-06-21)
+
+### `changelog.disable: true` と `--release-notes` は併用不可
+
+- GoReleaser の `--release-notes=FILE` は **changelog パイプ内**で読み込まれる。`.goreleaser.yaml` で `changelog: { disable: true }` にするとパイプごとスキップ（ログ `skipped generating changelog`）され、`--release-notes` が**サイレントに無視**されてリリース本文が空（GitHub API 上は `"\n"`、length 1）になる
+- 症状の切り分け: 全ステップ `success`・全アセット upload 成功なのに本文だけ空。フォールバック文字列（`Release vX`）ですらないなら、抽出ファイルは非空なのに goreleaser が読んでいない＝この罠。**Node 20 deprecation 警告は無関係**（JS ラッパーの実行時警告で本文だけを選択的に空にはできない。証拠で否定すること）
+- 根本原因の確定: ローカルと CI で goreleaser バージョンを揃え（`goreleaser --version`）、`--verbose` で `skipped generating changelog` を確認。本文はディスクに出ないので publish を伴わないと直接は見えない → パイプ挙動の差分で判定する
+- **対処**: 配布物生成は goreleaser に任せ、本文だけ publish 後に別ステップ `gh release edit "$GITHUB_REF_NAME" --notes-file /tmp/release-notes.md` で明示設定。`changelog.disable: true` は維持（git ログ由来ノートは不要）。goreleaser 引数から `--release-notes` は外す。代替案「disable を外す」は goreleaser の precedence 挙動に依存し実リリースまで目視検証できないため不採用
+- **GitLab は無影響**: `release-cli create --description "$(cat notes)"` で本文を直接渡すため同じ CHANGELOG 抽出でも空にならない。GitHub 固有の罠
+- **リリース後検証**: タグ push 後に `gh api repos/<o>/<r>/releases/tags/<tag> --jq '(.body|length)'` で本文長を必ず確認する（アセットの有無だけ見て満足しない）
+
 ## 既存ファイルへの追記は末尾改行を保証する (2026-06-20)
 
 ### 追記する前に既存ファイルの末尾改行を確認する
