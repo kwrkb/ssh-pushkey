@@ -7,7 +7,7 @@ import (
 
 func TestBuildDeployScript_Admin(t *testing.T) {
 	pubKey := "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample user@host"
-	script := buildDeployScript(pubKey, true, false)
+	script := buildDeployScript(pubKey, "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample", true, false)
 
 	checks := []struct {
 		name    string
@@ -22,7 +22,8 @@ func TestBuildDeployScript_Admin(t *testing.T) {
 		{"icacls Administrators SID", "*S-1-5-32-544:(F)"},
 		{"icacls user SID", "*${userSid}:(F)"},
 		{"user SID lookup", "WindowsIdentity]::GetCurrent()).User.Value"},
-		{"duplicate check", "Select-String"},
+		{"duplicate check by blob", "-ceq $keyBlob"},
+		{"key blob assigned", "$keyBlob = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample'"},
 		{"inheritance remove keyFile", "icacls $keyFile /inheritance:r"},
 		{"inheritance remove sshDir", "icacls $sshDir /inheritance:r"},
 		{"LASTEXITCODE check", "LASTEXITCODE"},
@@ -39,7 +40,7 @@ func TestBuildDeployScript_Admin(t *testing.T) {
 
 func TestBuildDeployScript_NormalUser(t *testing.T) {
 	pubKey := "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample user@host"
-	script := buildDeployScript(pubKey, false, false)
+	script := buildDeployScript(pubKey, "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample", false, false)
 
 	checks := []struct {
 		name    string
@@ -53,7 +54,7 @@ func TestBuildDeployScript_NormalUser(t *testing.T) {
 		{"icacls Administrators SID", "*S-1-5-32-544:(F)"},
 		{"icacls user SID", "*${userSid}:(F)"},
 		{"user SID lookup", "WindowsIdentity]::GetCurrent()).User.Value"},
-		{"duplicate check", "Select-String"},
+		{"duplicate check by blob", "-ceq $keyBlob"},
 		{"inheritance remove sshDir", "icacls $sshDir /inheritance:r"},
 		{"LASTEXITCODE check", "LASTEXITCODE"},
 	}
@@ -81,7 +82,7 @@ func TestBuildDeployScript_AclValidation(t *testing.T) {
 			name = "admin"
 		}
 		t.Run(name, func(t *testing.T) {
-			script := buildDeployScript(pubKey, isAdmin, false)
+			script := buildDeployScript(pubKey, "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample", isAdmin, false)
 			if !strings.Contains(script, "ACL_SET_FAILED_DIR") || !strings.Contains(script, "ACL_SET_FAILED_FILE") {
 				t.Errorf("script should contain ACL_SET_FAILED_DIR and ACL_SET_FAILED_FILE markers\n\nscript:\n%s", script)
 			}
@@ -91,7 +92,7 @@ func TestBuildDeployScript_AclValidation(t *testing.T) {
 
 func TestBuildDeployScript_EscapesSingleQuotes(t *testing.T) {
 	pubKey := "ssh-ed25519 AAAAC3 it's a test"
-	script := buildDeployScript(pubKey, false, false)
+	script := buildDeployScript(pubKey, "ssh-ed25519 AAAAC3", false, false)
 
 	if !strings.Contains(script, "it''s a test") {
 		t.Errorf("single quotes should be escaped with double single quotes\n\nscript:\n%s", script)
@@ -99,7 +100,7 @@ func TestBuildDeployScript_EscapesSingleQuotes(t *testing.T) {
 }
 
 func TestBuildDeployScript_ErrorActionPreference(t *testing.T) {
-	script := buildDeployScript("ssh-ed25519 AAAA test", false, false)
+	script := buildDeployScript("ssh-ed25519 AAAA test", "ssh-ed25519 AAAA", false, false)
 
 	if !strings.Contains(script, "$ErrorActionPreference = 'Stop'") {
 		t.Error("script should set ErrorActionPreference to Stop")
@@ -107,7 +108,7 @@ func TestBuildDeployScript_ErrorActionPreference(t *testing.T) {
 }
 
 func TestBuildDeployScript_NoHardcodedPrincipalNames(t *testing.T) {
-	script := buildDeployScript("ssh-ed25519 AAAA test", false, false)
+	script := buildDeployScript("ssh-ed25519 AAAA test", "ssh-ed25519 AAAA", false, false)
 
 	// 名前ベースのプリンシパルがicaclsコマンドに含まれないことを確認
 	// （SIDベースの *S-1-5-18 等を使用すべき）
@@ -127,14 +128,14 @@ func TestBuildDeployScript_NoHardcodedPrincipalNames(t *testing.T) {
 
 func TestBuildDeployScript_DryRun(t *testing.T) {
 	pubKey := "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample user@host"
-	script := buildDeployScript(pubKey, true, true)
+	script := buildDeployScript(pubKey, "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample", true, true)
 
 	// dry-run で出力されるべきもの
 	for _, want := range []string{
 		"$dryRun = $true",
 		"DRY_RUN_TARGET:",
 		"DRY_RUN_DUP:",
-		"Select-String", // 重複チェックは実行する
+		"-ceq $keyBlob", // 重複チェックは実行する
 	} {
 		if !strings.Contains(script, want) {
 			t.Errorf("dry-run script should contain %q\n\nscript:\n%s", want, script)
@@ -159,7 +160,7 @@ func TestBuildDeployScript_DryRun(t *testing.T) {
 }
 
 func TestBuildDeployScript_NonDryRunWrites(t *testing.T) {
-	script := buildDeployScript("ssh-ed25519 AAAA test", false, false)
+	script := buildDeployScript("ssh-ed25519 AAAA test", "ssh-ed25519 AAAA", false, false)
 	if !strings.Contains(script, "$dryRun = $false") {
 		t.Errorf("non-dry-run script should set $dryRun = $false\n\nscript:\n%s", script)
 	}
@@ -169,7 +170,7 @@ func TestBuildDeployScript_NonDryRunWrites(t *testing.T) {
 }
 
 func TestBuildDeployScript_AclErrorCapture(t *testing.T) {
-	script := buildDeployScript("ssh-ed25519 AAAA test", false, false)
+	script := buildDeployScript("ssh-ed25519 AAAA test", "ssh-ed25519 AAAA", false, false)
 	// icacls の出力を 2>&1 で捕捉し、失敗マーカーへ実エラーを付加すること
 	for _, want := range []string{
 		"2>&1",

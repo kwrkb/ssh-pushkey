@@ -213,6 +213,16 @@ func validatePubKeyLine(line string) (string, error) {
 	return trimmed, nil
 }
 
+// pubKeyBlob は公開鍵行から重複判定用の blob（type + base64、コメント除去）を抽出する。
+// ssh.MarshalAuthorizedKey は "type base64\n" を返すため、末尾改行を除去して返す。
+func pubKeyBlob(line string) (string, error) {
+	pk, _, _, _, err := ssh.ParseAuthorizedKey([]byte(line))
+	if err != nil {
+		return "", fmt.Errorf("invalid public key format: %w", err)
+	}
+	return strings.TrimSpace(string(ssh.MarshalAuthorizedKey(pk))), nil
+}
+
 // findNewestPubKey returns the path to the newest ~/.ssh/id_*.pub file by mtime.
 func findNewestPubKey() (string, error) {
 	home, err := os.UserHomeDir()
