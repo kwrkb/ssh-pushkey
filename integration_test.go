@@ -105,12 +105,12 @@ func TestIntegration_DeployKey(t *testing.T) {
 	}
 	defer client.Close()
 
-	if err := DeployKey(client, pubKey); err != nil {
+	if err := DeployKey(client, pubKey, false); err != nil {
 		t.Fatalf("key deployment failed: %v", err)
 	}
 
 	// 2回目は重複スキップされることを確認
-	if err := DeployKey(client, pubKey); err != nil {
+	if err := DeployKey(client, pubKey, false); err != nil {
 		t.Fatalf("second deployment failed: %v", err)
 	}
 }
