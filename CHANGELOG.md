@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- Duplicate-key detection now compares only the key blob (type + base64), ignoring the comment field. A key that is already present under a different comment is now correctly recognized as a duplicate and skipped, instead of being appended again.
+
+### Fixed
+
+- `known_hosts` updates (host-key replacement) are now written atomically via a temp file in the same directory followed by `rename`, the same approach OpenSSH itself uses. This prevents corruption from a partial write or concurrent access; readers always see either the complete old or the complete new file.
+
 ## [1.6.0] - 2026-06-20
 
 ### Added
