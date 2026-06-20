@@ -1,7 +1,10 @@
 # GoReleaser config — GitHub is the canonical release/distribution source.
-# Release notes are supplied from CHANGELOG.md via the workflow's
-# `--release-notes` flag (see .github/workflows/release.yml), so GoReleaser's
-# own changelog generation is disabled.
+# GoReleaser's own changelog generation is disabled; the release body is set
+# from CHANGELOG.md by a separate `gh release edit` step after GoReleaser
+# publishes (see .github/workflows/release.yml).
+# Note: GoReleaser's `--release-notes` flag is loaded inside the changelog
+# pipe, so `changelog.disable: true` would silently skip it — hence the
+# explicit post-publish step instead of `--release-notes`.
 version: 2
 
 project_name: ssh-pushkey
