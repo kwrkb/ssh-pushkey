@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-06-20
+
 ### Added
 
 - `-n` / `--dry-run` flag: preview the deployment target and whether the key already exists, without writing the key or changing ACLs (`ssh-copy-id -n` compatible). Still connects and prompts for the password, since the target is resolved on the remote host.
@@ -131,7 +133,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Duplicate key detection
 - PowerShell remote execution via `-EncodedCommand` (UTF-16LE Base64)
 
-[Unreleased]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.4.1...HEAD
+[Unreleased]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.6.0...HEAD
+[1.6.0]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.5.1...v1.6.0
+[1.5.1]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.5.0...v1.5.1
+[1.5.0]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.4.1...v1.5.0
 [1.4.1]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.4.0...v1.4.1
 [1.4.0]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.3.0...v1.4.0
 [1.1.2]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.1.1...v1.1.2
