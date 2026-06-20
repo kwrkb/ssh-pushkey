@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-06-20
+
 ### Changed
 
 - Duplicate-key detection now compares only the key blob (type + base64), ignoring the comment field. A key that is already present under a different comment is now correctly recognized as a duplicate and skipped, instead of being appended again.
@@ -142,7 +144,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Duplicate key detection
 - PowerShell remote execution via `-EncodedCommand` (UTF-16LE Base64)
 
-[Unreleased]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.6.0...HEAD
+[Unreleased]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.7.0...HEAD
+[1.7.0]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.6.0...v1.7.0
 [1.6.0]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.5.1...v1.6.0
 [1.5.1]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.5.0...v1.5.1
 [1.5.0]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.4.1...v1.5.0
