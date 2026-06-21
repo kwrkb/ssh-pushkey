@@ -1,5 +1,19 @@
 # LESSONS
 
+## ホストキー検証パスのテスト整備 (Issue #16) (2026-06-21)
+
+### OS 非依存のクライアント側処理は「実機統合テスト」ではなくローカルサーバで CI 化する
+- ホストキー検証（TOFU / 不一致拒否 / 鍵更新 / HashKnownHosts）は `dialSSH → createHostKeyCallback → knownhosts` の**純粋なクライアント側 Go SSH 処理**で、リモートが Windows か否かに一切依存しない。Issue は実 Windows ホスト向け integration-tag テスト＋手動手順を想定していたが、その切り分け自体が不要だった
+- **ルール**: 「実機が要る」と書かれた検証要求を鵜呑みにせず、まず *どの層の挙動か* を切り分ける。検証対象がクライアント側で完結するなら、`127.0.0.1:0` に標準ライブラリ製の `ssh.ServerConfig`（password 認証のみ・チャネルは Reject で十分。`ssh.Dial` は認証完了で返りチャネルを開かない）を立て、実コードパスをそのまま exercise する tag なしテスト（`go test ./...` で走る）に昇格させる
+
+### 端末入力は `var` 関数にして応答を注入可能にする
+- `readLineFromTerminal` は `/dev/tty` を直接読むためテストから制御できなかった。`func` 宣言を `var readLineFromTerminal = func() ...` に変えるだけで、テストが固定応答（yes/no）や「呼ばれたら失敗」スパイを注入できる。本体変更は1行
+- **ルール**: 対話プロンプトを伴う関数はパッケージ変数 `var fn = func(){...}` にしておく。テストでは `prev := fn; t.Cleanup(func(){ fn = prev })` で必ず復元する。`t.Setenv("HOME", tmp)` で known_hosts の探索先を temp に振るのと併せ、これらのテストは**非並列前提**（`t.Parallel()` 禁止）
+
+### known_hosts 不一致テストは同一鍵種別の別鍵を使う
+- 不一致（REMOTE HOST IDENTIFICATION HAS CHANGED）経路を検証する際、登録済みの「誤った鍵」をサーバ鍵と**別種別**（例: ecdsa vs ed25519）にすると、`HostKeyAlgorithms` 制限でハンドシェイクが失敗し `shouldRetryWithoutHostKeyAlgorithms` の再試行経路に逸れて、本来 assert したい `KeyError.Want` の不一致経路に到達しない
+- **ルール**: 鍵不一致／更新の経路をテストするときは、シードする旧鍵とサーバ鍵を**同一種別（ed25519）の別鍵**にする。`crypto/ed25519.GenerateKey` を2回呼べばよい
+
 ## GoReleaser: changelog.disable は --release-notes も無効化する (2026-06-21)
 
 ### `changelog.disable: true` と `--release-notes` は併用不可
