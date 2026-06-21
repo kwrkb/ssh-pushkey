@@ -126,6 +126,11 @@
 - テストの出力比較は `strings.Contains` に修正済みだったが、`useAdminKeyFile` 内の `IsInRole` / `sshd_config` 判定は `strings.TrimSpace(output) == "True"` のままだった。結果、Adminユーザーが一般ユーザーと誤判定された
 - **ルール**: PowerShellの出力を判定するコードを書く・修正する際は、プロジェクト内の全箇所を検索し、同じパターンの出力比較が残っていないか確認する。1箇所直したら他も直す
 
+### 単一値を取得する場合も CLIXML 混入を前提に「行スキャン」で抽出する (Issue #4, 2026-06-21)
+- `Write-Output $env:SSH_CONNECTION` のように単一値を取得しても、出力には `#< CLIXML` ヘッダや末尾の `<Objs>` プログレス XML が混入する（実機 Windows OpenSSH で確認: `"#< CLIXML\r\n127.0.0.1 48542 127.0.0.1 22\r\n<Objs ...></Objs>"`）。これを `strings.TrimSpace` + `strings.Fields` で丸ごとトークン化するとフィールド数が4を超えて常にフォールバックに落ち、修正が silent no-op になっていた
+- ユニットテスト（クリーンな値を渡す）では気付けず、実機プローブで初めて発覚した
+- **ルール**: リモート PowerShell の出力から値を取り出すときは出力全体を1値として扱わない。`effectiveAdminKeysFromSshdT` と同様に行ごとに走査し、期待する形状（例: SSH_CONNECTION の「4フィールド = IP/port/IP/port」）に一致する行だけを抽出する。`strings.Contains` での有無判定だけでなくトークン抽出にも CLIXML 耐性を持たせる。ユニットテストには実機出力を写した CLIXML 混入ケースを必ず1つ含める
+
 ## Windows OpenSSH ACL準拠 (2026-03-10)
 
 ### ACLはディレクトリとファイルの両方に設定する
