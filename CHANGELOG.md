@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Host-key-dependent `Match` rules (e.g. `Match Address`) are now evaluated against the real client address. The `sshd -T -C` connection spec (`host`/`addr`/`laddr`/`lport`) is derived from `SSH_CONNECTION` instead of the previously hard-coded `localhost`/`127.0.0.1`, so the tool reads the effective `AuthorizedKeysFile` for the actual source address when choosing where to deploy the key.
+
 ## [1.7.1] - 2026-06-21
 
 ### Changed
