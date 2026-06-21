@@ -373,7 +373,10 @@ func appendKnownHostsLine(path, line string) error {
 // readLineFromTerminal は端末から1行読み取る。
 // パスワード入力後にStdinがパイプ化されている場合でも/dev/ttyから直接読み取る。
 // rawモードは使用せず、行バッファリングを利用してバックスペース等の行編集を有効にする。
-func readLineFromTerminal() (string, error) {
+//
+// テストからホスト鍵検証のプロンプト応答を注入できるよう var にしている。
+// 差し替えるテストは t.Parallel() を使わず、defer で必ず元へ戻すこと。
+var readLineFromTerminal = func() (string, error) {
 	tty, err := os.Open("/dev/tty")
 	if err != nil {
 		// /dev/ttyが使えない場合（Windows等）はStdinにフォールバック
