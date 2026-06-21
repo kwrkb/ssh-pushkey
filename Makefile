@@ -1,8 +1,8 @@
 # ssh-pushkey 開発用タスク
 #
 # 統合テストは2つの env ファイルから認証情報を読み込む（いずれも gitignore 済み）:
-#   .env.integration       … 管理者アカウント (例: test-pushkey-admin)
-#   .env.integration.user  … 一般アカウント   (例: test-pushkey-user)
+#   .env.integration       … 管理者アカウント (例: pushadmin)
+#   .env.integration.user  … 一般アカウント   (例: pushuser)
 # 各ファイルは `export SSH_TEST_HOST=... / SSH_TEST_USER=... / SSH_TEST_PASSWORD=...` を定義する。
 # ターゲットが自分でファイルを読み込むため、手動 `source` は不要。
 
