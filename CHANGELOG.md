@@ -7,9 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.7.2] - 2026-06-21
+
 ### Fixed
 
-- Host-key-dependent `Match` rules (e.g. `Match Address`) are now evaluated against the real client address. The `sshd -T -C` connection spec (`host`/`addr`/`laddr`/`lport`) is derived from `SSH_CONNECTION` instead of the previously hard-coded `localhost`/`127.0.0.1`, so the tool reads the effective `AuthorizedKeysFile` for the actual source address when choosing where to deploy the key.
+- Host-key-dependent `Match` rules (e.g. `Match Address`) are now evaluated against the real client address. The `sshd -T -C` connection spec (`host`/`addr`/`laddr`/`lport`) is derived from `SSH_CONNECTION` instead of the previously hard-coded `localhost`/`127.0.0.1`, so the tool reads the effective `AuthorizedKeysFile` for the actual source address when choosing where to deploy the key. Verified end-to-end on a non-loopback client (see `docs/match-address-verification.md`).
 
 ## [1.7.1] - 2026-06-21
 
@@ -159,7 +161,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Duplicate key detection
 - PowerShell remote execution via `-EncodedCommand` (UTF-16LE Base64)
 
-[Unreleased]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.7.0...HEAD
+[Unreleased]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.7.2...HEAD
+[1.7.2]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.7.1...v1.7.2
+[1.7.1]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.7.0...v1.7.1
 [1.7.0]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.6.0...v1.7.0
 [1.6.0]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.5.1...v1.6.0
 [1.5.1]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.5.0...v1.5.1
