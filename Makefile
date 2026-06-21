@@ -45,7 +45,7 @@ define run_itest
 	: "$${SSH_TEST_USER:?$(1) に SSH_TEST_USER が未定義}"; \
 	: "$${SSH_TEST_PASSWORD:?$(1) に SSH_TEST_PASSWORD が未定義}"; \
 	echo "=> 統合テスト（$(2): $$SSH_TEST_USER@$$SSH_TEST_HOST）"; \
-	go test -tags=integration -v $(if $(RUN),-run $(RUN),) ./...
+	go test -tags=integration -v $(if $(RUN),-run "$(RUN)",) ./...
 endef
 
 # PR 前チェック（build tag 付きファイルのコンパイル崩れ検知含む）
