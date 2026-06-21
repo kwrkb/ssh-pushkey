@@ -1,5 +1,23 @@
 # LESSONS
 
+## 非 loopback での Match Address 検証 (Issue #17) (2026-06-21)
+
+### 既存鍵が残った状態ではバグも修正も観測できない（最大のハマりどころ）
+- 修正バイナリと旧バイナリの差を観測しようとして、何度実行しても挙動が変わらない症状にはまった。原因は配置先（user 側 / admin 側両方）に過去の検証で残った鍵があり、`buildDeployScript` の重複判定（blob 単位）が deploy 自体をスキップしていたこと。バグ再現も修正検証も「実際に書き込みが起きる」前提なので、書き込み前にショートサーキットされるとどちらの分岐に行ったかさえ分からなくなる
+- **ルール**: 配置ロジックを差し替えた前後で挙動差を比較する実機検証では、必ず**配置先候補すべて**（admin 側 `administrators_authorized_keys` と user 側 `~/.ssh/authorized_keys` の両方）の既存鍵を削除してクリーンな状態から始める。重複検知が成功扱いで早期終了するため、ログ上は正常完了に見えて「何が起きたか」が一切残らない
+
+### Windows OpenSSH の `sshd -T -C user=...` ではグループ解決が効かない
+- 検証台で `Match Group administrators` を使ったら、`sshd -T -C user=pushadmin,addr=...` 経由のオフライン評価で `ga_init, unable to resolve user pushadmin` 警告が出てブロックが**発火しなかった**。`sshd_config` 上は通る構成だが、オフラインの実効値プローブではグループ解決ができないため、harness としては機能しない
+- **ルール**: `sshd -T -C` ベースの検証 harness を作るときは `Match Group` を避け、**`Match User <username>`**（文字列マッチでグループ解決不要）で組む。`Match Group administrators` を前提にしたテストは「実機 SSH 接続では効くが `sshd -T` では発火しない」という非対称を生む
+
+### Windows OpenSSH の Match 評価は first-wins、Match Address を先に置く
+- `Match Address 192.168.0.84` と `Match User pushadmin` を後者→前者の順で書いたところ、実IP（`192.168.0.84`）からの `sshd -T` でも admin パスが返ってきて Address ブロックが効いていなかった。順序を入れ替えて Address を先頭に置いたら期待どおり割れた。Windows OpenSSH の `AuthorizedKeysFile` は実測で **first-wins**（最初にマッチした Match ブロックが勝つ）挙動
+- **ルール**: addr 依存の差を観測したい検証台では `Match Address` を必ず**先頭**に置き、baseline（`Match User ...`）はその後に置く。loopback で baseline を踏ませ、実IPでだけ Address ブロックに入れる順序が「差が出る harness」の鍵
+
+### `go install` 済みの旧バイナリが PATH 経由で実行されて自爆する
+- 修正後の master をビルドしたつもりが、Mac の `$GOPATH/bin/ssh-pushkey`（旧 `go install` の遺物）が PATH で勝っていて、いつまでも旧挙動が出続けた
+- **ルール**: バイナリ差し替え検証では `go install` ではなく `go build -o <別名>` で明示的に成果物を作り、`./別名` 相対パスで実行する。`which ssh-pushkey` で何が走っているかを毎回確認する習慣をつける
+
 ## ホストキー検証パスのテスト整備 (Issue #16) (2026-06-21)
 
 ### OS 非依存のクライアント側処理は「実機統合テスト」ではなくローカルサーバで CI 化する
