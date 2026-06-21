@@ -98,11 +98,14 @@ func normalizedAddr(port int) string {
 }
 
 // tempHome は HOME を新しい一時ディレクトリに差し替え、その known_hosts パスを返す。
-// dialSSH -> createHostKeyCallback は os.UserHomeDir()（Unix では $HOME）配下を参照する。
+// dialSSH -> createHostKeyCallback は os.UserHomeDir() 配下を参照する。
+// os.UserHomeDir() は Unix では $HOME、Windows では %USERPROFILE% を優先するため、
+// 両方を temp に振らないと Windows でのテスト実行時に開発者の実 known_hosts を汚染し得る。
 func tempHome(t *testing.T) string {
 	t.Helper()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
 	return filepath.Join(home, ".ssh", "known_hosts")
 }
 
