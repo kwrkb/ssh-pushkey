@@ -7,9 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.7.3] - 2026-08-11
+
 ### Changed
 
 - Updated dependencies: `golang.org/x/crypto` v0.53.0 → v0.54.0, `golang.org/x/term` v0.44.0 → v0.45.0.
+
+### Fixed
+
+- Development only: `make itest-*` now resolves 1Password `op://` references in `.env.integration*` by delegating to `op run --env-file` instead of sourcing the file in the shell, which failed to parse those references. Falls back to the previous `source` behaviour when the file contains no `op://` reference.
 
 ## [1.7.2] - 2026-06-21
 
@@ -165,7 +171,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Duplicate key detection
 - PowerShell remote execution via `-EncodedCommand` (UTF-16LE Base64)
 
-[Unreleased]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.7.2...HEAD
+[Unreleased]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.7.3...HEAD
+[1.7.3]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.7.2...v1.7.3
 [1.7.2]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.7.1...v1.7.2
 [1.7.1]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.7.0...v1.7.1
 [1.7.0]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.6.0...v1.7.0
