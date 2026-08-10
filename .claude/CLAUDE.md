@@ -48,6 +48,7 @@ make itest-all     # admin → user の順で両方
   - `.env.integration` — 管理者アカウント（例: `pushadmin`）
   - `.env.integration.user` — 一般アカウント（例: `pushuser`）
   - 各ファイルは `export SSH_TEST_HOST=... / SSH_TEST_USER=... / SSH_TEST_PASSWORD=...` を定義
+  - 値に 1Password の `op://<vault>/<item>/<field>` 参照を書ける。その場合 Makefile は `source` ではなく `op run --env-file` に委譲して解決する（`op` CLI とサインインが必要）
 - PR 前は `make check` を必ず実行（build + vet + test + integration ビルド検証で build tag 付きファイルのコンパイル崩れを検知）
 
 ## Windows OpenSSH 固有ルール
