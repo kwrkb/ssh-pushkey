@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(glab ci list *)",
+      "Bash(glab mr view *)",
+      "Bash(glab mr list *)",
+      "Bash(glab release view *)",
+      "Bash(glab auth status)",
+      "Bash(go version)"
+    ]
+  }
+}
