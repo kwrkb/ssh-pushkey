@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- Updated dependencies: `golang.org/x/crypto` v0.53.0 → v0.54.0, `golang.org/x/term` v0.44.0 → v0.45.0.
+
 ## [1.7.2] - 2026-06-21
 
 ### Fixed
