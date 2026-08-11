@@ -20,7 +20,7 @@ ssh-pushkey/
 
 ## 現在地
 
-**v1.8.1 リリース済み（2026-08-12）。Scoop bucket への manifest 反映確認のみ残（下記）。**
+**v1.8.1 リリース済み（2026-08-12）。未着手のフェーズなし。**
 
 Step 1〜12（初期実装 / ACL 準拠 / ホスト鍵検証 / 全体レビュー対応 / 信頼性向上）および
 Issue #4・#16・#17 は完了。`CHANGELOG.md` に各リリースの内容、`LESSONS.md` に判断の記録がある。
@@ -48,9 +48,10 @@ GitHub Releases（正本）+ `go install` に整理済み。その後段とし�
 - [x] `kwrkb/scoop-bucket`（public）作成と PAT の secret 登録
 - [x] `.goreleaser.yaml` を `winget:` から `scoops:` へ差し替え、`release.yml` のトークンを配線
 - [x] README / README_ja のインストール導線を Scoop に差し替え
-- [ ] 次の `v*` タグで bucket に manifest が push されることを確認する
-      （`goreleaser release --snapshot` で manifest 生成までは検証済み）
-- [ ] 上記確認後、README / README_ja の「次のリリース以降で利用可能」注記を外す
+- [x] v1.8.1 で bucket に manifest が push されることを確認
+      （`kwrkb/scoop-bucket/ssh-pushkey.json`。hash がリリースの `checksums.txt` と
+      実ダウンロードの sha256 の両方に一致することも確認済み）
+- [x] README / README_ja の暫定注記を削除
 
 不採用: WinGet（上記。誤検知が解消し、かつ再発しないと確認できたら再検討）、
 Homebrew（`brews:` は GoReleaser v2.16 で hard deprecation ＝ `goreleaser check` が失敗し

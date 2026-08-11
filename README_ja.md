@@ -19,9 +19,6 @@ scoop bucket add kwrkb https://github.com/kwrkb/scoop-bucket
 scoop install ssh-pushkey
 ```
 
-> **次のリリース以降で利用可能になる。** bucket はリリース公開時に更新されるため、
-> それまでは下記の方法を使うこと。
-
 全プラットフォーム共通の正本は **[GitHub Releases](https://github.com/kwrkb/ssh-pushkey/releases)**。各リリースは `ssh-pushkey_<os>_<arch>.tar.gz`（Windows は `.zip`）のアーカイブと、検証用の `checksums.txt` を配布している。
 
 ソースから入れる場合:
