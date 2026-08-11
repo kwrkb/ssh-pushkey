@@ -57,8 +57,9 @@ func buildDeployScript(pubKey, keyBlob string, isAdmin bool, dryRun bool) string
 	sb.WriteString("  exit 0\n")
 	sb.WriteString("}\n")
 
-	// 既に存在すればスキップ
-	sb.WriteString("if ($exists) { Write-Output 'KEY_ALREADY_EXISTS'; exit 0 }\n")
+	// 既に存在すればスキップ。dry-run と同様、実際の配置先パスをマーカーに付けて返す
+	// （非 Admin 時の $env:USERPROFILE 展開結果は Go 側では分からないため）。
+	sb.WriteString("if ($exists) { Write-Output \"KEY_ALREADY_EXISTS:$keyFile\"; exit 0 }\n")
 
 	// ディレクトリ作成
 	sb.WriteString("if (-not (Test-Path $sshDir)) { New-Item -ItemType Directory -Path $sshDir -Force | Out-Null }\n")
@@ -92,7 +93,7 @@ func buildDeployScript(pubKey, keyBlob string, isAdmin bool, dryRun bool) string
 	sb.WriteString("$fileAclOut = & icacls $keyFile /inheritance:r /grant '*S-1-5-18:(F)' /grant '*S-1-5-32-544:(F)' /grant \"*${userSid}:(F)\" 2>&1\n")
 	sb.WriteString("if ($LASTEXITCODE -ne 0) { Write-Output \"ACL_SET_FAILED_FILE|$fileAclOut\"; exit 1 }\n")
 
-	sb.WriteString("Write-Output 'KEY_DEPLOYED'\n")
+	sb.WriteString("Write-Output \"KEY_DEPLOYED:$keyFile\"\n")
 
 	return sb.String()
 }
@@ -110,6 +111,22 @@ func extractAclErrorDetail(output, marker string) string {
 		}
 	}
 	return "(unknown error)"
+}
+
+// markerValue はマーカー行（"<marker><値>"）から値を抽出する。
+// PowerShell がモジュール初期化時に CLIXML 行を混入させるため、
+// extractAclErrorDetail / printDryRunResult と同じく行単位で走査する。
+// 値が無ければ "(unknown)" を返す。
+func markerValue(output, marker string) string {
+	for _, line := range strings.Split(output, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if i := strings.Index(trimmed, marker); i >= 0 {
+			if v := strings.TrimSpace(trimmed[i+len(marker):]); v != "" {
+				return v
+			}
+		}
+	}
+	return "(unknown)"
 }
 
 // printDryRunResult は dry-run スクリプト出力から配置先と重複状態を表示する。
@@ -368,9 +385,9 @@ func DeployKey(client *ssh.Client, pubKey string, dryRun bool) error {
 	case strings.Contains(result, "DRY_RUN_TARGET:"):
 		printDryRunResult(result)
 	case strings.Contains(result, "KEY_ALREADY_EXISTS"):
-		fmt.Println("=> Key already exists, skipping")
+		fmt.Printf("=> Key already exists in %s, skipping\n", markerValue(result, "KEY_ALREADY_EXISTS:"))
 	case strings.Contains(result, "KEY_DEPLOYED"):
-		fmt.Println("=> Key deployed successfully")
+		fmt.Printf("=> Key deployed to %s\n", markerValue(result, "KEY_DEPLOYED:"))
 	default:
 		fmt.Printf("=> Output: %s\n", result)
 	}
