@@ -1,5 +1,27 @@
 # LESSONS
 
+## 配布チャネル再判断: WinGet 採用 / Homebrew・Scoop 不採用 (2026-08-11)
+
+**同日の「改善候補の取捨選択」エントリで tap / bucket を見送りとした結論を、実測に基づき差し替える。**
+見送り時の未検証項目を潰したところ、前提が2つ崩れた。
+
+### `goreleaser check` で潰したら Homebrew は選択肢から消えた
+- 見送り時は「Homebrew は別リポジトリ + PAT が必要だから高い」というコスト論で判断していたが、実際に検証すると**そもそも formula を選べない**。`brews:` は GoReleaser v2.16 で hard deprecation となり、ローカル v2.17.1 で `goreleaser check` が失敗する: `DEPRECATED: brews should not be used anymore` → `check failed  error=1 out of 1 configuration file(s) have issues`
+- 残る `homebrew_casks:` は check を通るが、Cask は長らく macOS 専用（Homebrew maintainer, 2022: "Casks are only for macOS."）。Homebrew 6.0.0（2026-06-11）で Linux cask 要件の明示化・Linux checksum variations・AppImage 対応が入っており単一バイナリなら通る可能性はあるが、ローカルに brew が無く**実地検証できていない**
+- **却下した案**: `homebrew_casks:` を入れる — 確実に効くのは macOS のみで、そこは既に `go install` / tarball がある層。代替不在の層ではない
+- **ルール**: 「コストが高いから見送り」と書きそうになったら、先に `goreleaser check` を回す。コストを論じる前に**そもそも選べるか**が決まっていることがある
+
+### ターゲット OS とクライアント OS を混同して配布チャネルを選びかけた
+- 「Windows OpenSSH がターゲットのツールだから Windows のパッケージマネージャ（Scoop）」と考えたが、これは**ツールが何を操作するか**と**誰がどこで実行するか**の混同。クライアント環境で切り直すと像が変わる: WSL/Linux・macOS には `ssh-copy-id` が存在する（Windows 非対応なだけ）のに対し、**Windows OpenSSH には `ssh-copy-id` がそもそも実装されていない**（Win32-OpenSSH の要望 issue #341 / #1467 / #2301 が長年オープン、野良 PowerShell スクリプトが流通している）
+- 同時に、最大セグメントであろう WSL/Linux は**どのチャネルを足しても既存導線（`go install` / tarball）のまま**で改善しないことも判明した
+- **決め手**: 代替が完全に存在しないのは Windows→Windows のみ。届ける価値が最も高いのはそこなので Windows 向けチャネルを選ぶ、という結論自体は維持しつつ、選ぶ理由を「ターゲットが Windows だから」から「その層にだけ代替が無いから」に置き換えた
+- **ルール**: 配布チャネルは「ツールが何を対象にするか」ではなく「**実行する人がどの OS にいて、そこに代替が有るか**」で選ぶ
+
+### 個人 bucket / tap は発見性がゼロなので、WinGet を採った
+- **却下した案**: (A) Scoop 個人 bucket — `scoop bucket add` を先に踏ませる必要があり、README を読んだ人にしか届かない。コストは WinGet と同額（新規リポジトリ + PAT）なのに発見性だけが無い。(B) Scoop を同一リポジトリで運用して PAT を回避 — GoReleaser 公式が `directory:` について「サブディレクトリだと `scoop bucket list` が 0 manifests になるので空推奨」と明記しており、manifest が**リポジトリルート**に出る。`scoop bucket add` でソースツリー全体が clone される形になり、PAT 1本を避ける対価としては割に合わない
+- **決め手**: 別リポジトリへの publish は GoReleaser 公式が「default action token は使えない、contents write 権限を持つ別トークンが必要」と明記しており、Scoop / Homebrew / WinGet のいずれも PAT 必須でコストが同額。同額なら**素の `winget search` に載り Windows 11 に標準搭載されている** WinGet が優位。`winget:` セクションも `goreleaser check` パスを確認済み
+- **覆す条件**: (1) WinGet の PR が未署名バイナリ等で継続的に落ちるなら、外部依存ゼロで自己完結する Scoop bucket に退避する。(2) macOS 向けの要望が実際に来たら `homebrew_casks:` を追加する（Linux で cask が動くかは要実地検証）
+
 ## 改善候補の取捨選択: 配布導線 / tap・bucket / --verbose (2026-08-11)
 
 ### Homebrew tap / Scoop bucket は「別リポジトリが構造上必須か」で切り分ける
