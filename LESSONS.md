@@ -1,5 +1,45 @@
 # LESSONS
 
+## 配布チャネル再判断: WinGet 採用 / Homebrew・Scoop 不採用 (2026-08-11)
+
+**同日の「改善候補の取捨選択」エントリで tap / bucket を見送りとした結論を、実測に基づき差し替える。**
+見送り時の未検証項目を潰したところ、前提が2つ崩れた。
+
+### `goreleaser check` で潰したら Homebrew は選択肢から消えた
+- 見送り時は「Homebrew は別リポジトリ + PAT が必要だから高い」というコスト論で判断していたが、実際に検証すると**そもそも formula を選べない**。`brews:` は GoReleaser v2.16 で hard deprecation となり、ローカル v2.17.1 で `goreleaser check` が失敗する: `DEPRECATED: brews should not be used anymore` → `check failed  error=1 out of 1 configuration file(s) have issues`
+- 残る `homebrew_casks:` は check を通るが、Cask は長らく macOS 専用（Homebrew maintainer, 2022: "Casks are only for macOS."）。Homebrew 6.0.0（2026-06-11）で Linux cask 要件の明示化・Linux checksum variations・AppImage 対応が入っており単一バイナリなら通る可能性はあるが、ローカルに brew が無く**実地検証できていない**
+- **却下した案**: `homebrew_casks:` を入れる — 確実に効くのは macOS のみで、そこは既に `go install` / tarball がある層。代替不在の層ではない
+- **ルール**: 「コストが高いから見送り」と書きそうになったら、先に `goreleaser check` を回す。コストを論じる前に**そもそも選べるか**が決まっていることがある
+
+### ターゲット OS とクライアント OS を混同して配布チャネルを選びかけた
+- 「Windows OpenSSH がターゲットのツールだから Windows のパッケージマネージャ（Scoop）」と考えたが、これは**ツールが何を操作するか**と**誰がどこで実行するか**の混同。クライアント環境で切り直すと像が変わる: WSL/Linux・macOS には `ssh-copy-id` が存在する（Windows 非対応なだけ）のに対し、**Windows OpenSSH には `ssh-copy-id` がそもそも実装されていない**（Win32-OpenSSH の要望 issue #341 / #1467 / #2301 が長年オープン、野良 PowerShell スクリプトが流通している）
+- 同時に、最大セグメントであろう WSL/Linux は**どのチャネルを足しても既存導線（`go install` / tarball）のまま**で改善しないことも判明した
+- **決め手**: 代替が完全に存在しないのは Windows→Windows のみ。届ける価値が最も高いのはそこなので Windows 向けチャネルを選ぶ、という結論自体は維持しつつ、選ぶ理由を「ターゲットが Windows だから」から「その層にだけ代替が無いから」に置き換えた
+- **ルール**: 配布チャネルは「ツールが何を対象にするか」ではなく「**実行する人がどの OS にいて、そこに代替が有るか**」で選ぶ
+
+### 個人 bucket / tap は発見性がゼロなので、WinGet を採った
+- **却下した案**: (A) Scoop 個人 bucket — `scoop bucket add` を先に踏ませる必要があり、README を読んだ人にしか届かない。コストは WinGet と同額（新規リポジトリ + PAT）なのに発見性だけが無い。(B) Scoop を同一リポジトリで運用して PAT を回避 — GoReleaser 公式が `directory:` について「サブディレクトリだと `scoop bucket list` が 0 manifests になるので空推奨」と明記しており、manifest が**リポジトリルート**に出る。`scoop bucket add` でソースツリー全体が clone される形になり、PAT 1本を避ける対価としては割に合わない
+- **決め手**: 別リポジトリへの publish は GoReleaser 公式が「default action token は使えない、contents write 権限を持つ別トークンが必要」と明記しており、Scoop / Homebrew / WinGet のいずれも PAT 必須でコストが同額。同額なら**素の `winget search` に載り Windows 11 に標準搭載されている** WinGet が優位。`winget:` セクションも `goreleaser check` パスを確認済み
+- **覆す条件**: (1) WinGet の PR が未署名バイナリ等で継続的に落ちるなら、外部依存ゼロで自己完結する Scoop bucket に退避する。(2) macOS 向けの要望が実際に来たら `homebrew_casks:` を追加する（Linux で cask が動くかは要実地検証）
+
+## 改善候補の取捨選択: 配布導線 / tap・bucket / --verbose (2026-08-11)
+
+### Homebrew tap / Scoop bucket は「別リポジトリが構造上必須か」で切り分ける
+- 配布チャネル追加の可否を運用コストの多寡で論じようとしたが、この案件はそれ以前の構造的制約で決まった。Homebrew の tap は `brew tap kwrkb/<name>` が `github.com/kwrkb/homebrew-<name>` に解決される命名規約のため、**第2のリポジトリと、そこへの write 権限を持つ PAT の secret 登録が必須**になる。一方 Scoop の bucket は manifest の置き場所に規約上の制約がなく、同一リポジトリの `bucket/` ディレクトリで成立し得る
+- **却下した案**: (A) Homebrew tap を今回入れる — 「いきなり別リポジトリ作成や外部公開はしない」という今回の明示制約に正面から抵触する。(B) Scoop bucket だけ今回入れる — 同一リポジトリ経路なら安いが、GoReleaser が manifest を commit するのに workflow 既存の `GITHUB_TOKEN`（contents:write）で足りるか PAT が要るかが未検証で、安いかどうかが確定していない。(C) 運用コストを見積もって総合判断 — 制約と未検証項目で既に決まるため、見積もりは判断に寄与しない
+- **決め手**: `LESSONS.md` の「配布チャネルは段階導入し、土台と tap/bucket を分ける」（2026-06-20）に既に段階分離のルールが記録済みで、今回やるべきは「今がその段階か」の判定だけだった。外部からの要望は観測されておらず、`GITHUB_TOKEN` で足りるかも未検証 → 両方とも見送り、`PLAN.md` に覆す条件として記録
+- **覆す条件**: (1) 外部から tap / bucket の要望が実際に来る、または (2) GoReleaser が同一リポジトリへ Scoop manifest を commit するのに `GITHUB_TOKEN` で足りる（PAT 不要）と検証できた場合、Scoop から再検討する
+
+### 診断フラグを足す前に「既に出ている出力」と実際の欠落を突き合わせる
+- `--verbose` で出したい候補として resolved host/port/user・public key source・administrator 判定・effective AuthorizedKeysFile・host key verification path・ACL 適用対象・deploy result が挙がったが、コードを当たると大半は既に通常実行で stdout に出ていた（`main.go` の `=> Public key loaded:` / `=> Connecting to %s@%s:%d`、`deploy.go` の `=> Checking Administrators group...` / `=> administrators_authorized_keys is enabled (sshd -T)` / `=> Target: %s`）。「静かな UX に診断を足す」という前提自体が実態と合っていなかった
+- **却下した案**: (A) `--verbose` を実装する — 新規フラグ1本と出力の二重系統を持ち込む対価が、既出力との重複でほぼ相殺される。(B) known_hosts パスや `sshd -T` の生の `AuthorizedKeysFile` 値も出す — 「非スコープ」と明示されている `doctor` 的診断機能への入口になる
+- **決め手**: 突き合わせで残った実際の欠落は1点だけだった。**dry-run は `DRY_RUN_TARGET:` で配置先パスを出すのに、通常実行の `KEY_DEPLOYED` はパスを持たない**という非対称。非 Admin 時の配置先は `$env:USERPROFILE` 展開後にしか確定せず Go 側で組み立てられないため、既存の `DRY_RUN_TARGET:` と同じ方式でマーカーに `$keyFile` を載せる（`KEY_DEPLOYED:<path>` / `KEY_ALREADY_EXISTS:<path>`）形にした。フラグ追加ゼロで欠落が埋まる
+- **覆す条件**: 「どこで失敗したか分からない」という報告が実際に来て、かつ既存の stdout と `--dry-run` の組み合わせでは切り分けられないケースが具体的に示された場合
+
+### 「既存機能で足りる」を不採用の論拠にするなら、その機能が発見可能かを先に確認する
+- `--verbose` 不採用の論拠を「`--dry-run` で足りる」と書こうとした時点で、その `--dry-run` が README の Options 表に載っていないことに気づいた。`CHANGELOG.md` を確認すると v1.6.0（2026-06-20）で追加済み、README の最終更新も同日なのに表だけ更新漏れしていた（`--help` も同様）
+- **ルール**: 新機能を「既存機能で代替できる」と言って却下するときは、その既存機能がドキュメント上で発見可能かを必ず確認する。発見できない機能は存在しないのと同じで、却下の論拠が成立しない。ドキュメント整備が却下の前提条件になる
+
 ## env ファイルの 1Password 参照は source では解決できない (2026-08-10)
 
 ### `op://` 参照を含む env ファイルは `.`（source）ではなく `op run --env-file` に渡す

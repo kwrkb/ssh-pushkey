@@ -57,8 +57,9 @@ func buildDeployScript(pubKey, keyBlob string, isAdmin bool, dryRun bool) string
 	sb.WriteString("  exit 0\n")
 	sb.WriteString("}\n")
 
-	// 既に存在すればスキップ
-	sb.WriteString("if ($exists) { Write-Output 'KEY_ALREADY_EXISTS'; exit 0 }\n")
+	// 既に存在すればスキップ。dry-run と同様、実際の配置先パスをマーカーに付けて返す
+	// （非 Admin 時の $env:USERPROFILE 展開結果は Go 側では分からないため）。
+	sb.WriteString("if ($exists) { Write-Output \"KEY_ALREADY_EXISTS:$keyFile\"; exit 0 }\n")
 
 	// ディレクトリ作成
 	sb.WriteString("if (-not (Test-Path $sshDir)) { New-Item -ItemType Directory -Path $sshDir -Force | Out-Null }\n")
@@ -92,7 +93,7 @@ func buildDeployScript(pubKey, keyBlob string, isAdmin bool, dryRun bool) string
 	sb.WriteString("$fileAclOut = & icacls $keyFile /inheritance:r /grant '*S-1-5-18:(F)' /grant '*S-1-5-32-544:(F)' /grant \"*${userSid}:(F)\" 2>&1\n")
 	sb.WriteString("if ($LASTEXITCODE -ne 0) { Write-Output \"ACL_SET_FAILED_FILE|$fileAclOut\"; exit 1 }\n")
 
-	sb.WriteString("Write-Output 'KEY_DEPLOYED'\n")
+	sb.WriteString("Write-Output \"KEY_DEPLOYED:$keyFile\"\n")
 
 	return sb.String()
 }
@@ -110,6 +111,37 @@ func extractAclErrorDetail(output, marker string) string {
 		}
 	}
 	return "(unknown error)"
+}
+
+// markerValue はマーカー行（"<marker><値>"）から値を抽出する。
+// PowerShell がモジュール初期化時に CLIXML 行を混入させるため、printDryRunResult と
+// 同じく行単位で走査し、かつ**行頭一致**を要求する。
+// 部分一致にすると、マーカーに載せた配置先パスが別マーカーの文字列を含む場合
+// （例: KEY_DEPLOYED:C:\Users\KEY_ALREADY_EXISTS\.ssh\authorized_keys）に誤検知する。
+// 値が無い / 該当行が無ければ "(unknown)" を返す。
+func markerValue(output, marker string) string {
+	for _, line := range strings.Split(output, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, marker) {
+			continue
+		}
+		if v := strings.TrimSpace(trimmed[len(marker):]); v != "" {
+			return v
+		}
+	}
+	return "(unknown)"
+}
+
+// hasMarkerLine は出力に marker で始まる行があるかを返す。
+// DeployKey の結果判定はこれを使い、出力全体への部分一致（strings.Contains）は使わない。
+// マーカーが配置先パスを載せるようになったため、部分一致だと分岐を取り違える。
+func hasMarkerLine(output, marker string) bool {
+	for _, line := range strings.Split(output, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), marker) {
+			return true
+		}
+	}
+	return false
 }
 
 // printDryRunResult は dry-run スクリプト出力から配置先と重複状態を表示する。
@@ -359,18 +391,18 @@ func DeployKey(client *ssh.Client, pubKey string, dryRun bool) error {
 
 	// exit 1 でエラーが返る場合もマーカーを優先チェック
 	switch {
-	case strings.Contains(result, "ACL_SET_FAILED_DIR"):
+	case hasMarkerLine(result, "ACL_SET_FAILED_DIR"):
 		return fmt.Errorf("failed to set directory ACL: %s", extractAclErrorDetail(result, "ACL_SET_FAILED_DIR"))
-	case strings.Contains(result, "ACL_SET_FAILED_FILE"):
+	case hasMarkerLine(result, "ACL_SET_FAILED_FILE"):
 		return fmt.Errorf("failed to set key file ACL: %s", extractAclErrorDetail(result, "ACL_SET_FAILED_FILE"))
 	case err != nil:
 		return fmt.Errorf("key deployment failed: %w", err)
-	case strings.Contains(result, "DRY_RUN_TARGET:"):
+	case hasMarkerLine(result, "DRY_RUN_TARGET:"):
 		printDryRunResult(result)
-	case strings.Contains(result, "KEY_ALREADY_EXISTS"):
-		fmt.Println("=> Key already exists, skipping")
-	case strings.Contains(result, "KEY_DEPLOYED"):
-		fmt.Println("=> Key deployed successfully")
+	case hasMarkerLine(result, "KEY_ALREADY_EXISTS:"):
+		fmt.Printf("=> Key already exists in %s, skipping\n", markerValue(result, "KEY_ALREADY_EXISTS:"))
+	case hasMarkerLine(result, "KEY_DEPLOYED:"):
+		fmt.Printf("=> Key deployed to %s\n", markerValue(result, "KEY_DEPLOYED:"))
 	default:
 		fmt.Printf("=> Output: %s\n", result)
 	}

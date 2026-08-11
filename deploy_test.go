@@ -228,6 +228,150 @@ func TestBuildDeployScript_AclErrorCapture(t *testing.T) {
 	}
 }
 
+// 通常実行でも実際の配置先パスを報告できるよう、結果マーカーに $keyFile を付けていること。
+// 非 Admin 時の配置先は $env:USERPROFILE 展開後にしか確定しないため、Go 側では組み立てられない。
+func TestBuildDeployScript_ResultMarkersCarryKeyFile(t *testing.T) {
+	for _, isAdmin := range []bool{true, false} {
+		name := "normal"
+		if isAdmin {
+			name = "admin"
+		}
+		t.Run(name, func(t *testing.T) {
+			script := buildDeployScript("ssh-ed25519 AAAA test", "ssh-ed25519 AAAA", isAdmin, false)
+
+			for _, want := range []string{
+				`Write-Output "KEY_ALREADY_EXISTS:$keyFile"`,
+				`Write-Output "KEY_DEPLOYED:$keyFile"`,
+			} {
+				if !strings.Contains(script, want) {
+					t.Errorf("script should contain %q\n\nscript:\n%s", want, script)
+				}
+			}
+
+			// $keyFile を展開させるには二重引用符が必要。単一引用符のままだとリテラル出力になる。
+			for _, notWant := range []string{
+				"Write-Output 'KEY_ALREADY_EXISTS'",
+				"Write-Output 'KEY_DEPLOYED'",
+			} {
+				if strings.Contains(script, notWant) {
+					t.Errorf("script should not contain bare marker %q (path would be lost)\n\nscript:\n%s", notWant, script)
+				}
+			}
+		})
+	}
+}
+
+func TestMarkerValue(t *testing.T) {
+	cases := []struct {
+		name   string
+		output string
+		marker string
+		want   string
+	}{
+		{
+			name:   "admin path",
+			output: "KEY_DEPLOYED:C:\\ProgramData\\ssh\\administrators_authorized_keys",
+			marker: "KEY_DEPLOYED:",
+			want:   "C:\\ProgramData\\ssh\\administrators_authorized_keys",
+		},
+		{
+			name:   "path with spaces after CLIXML noise",
+			output: "#< CLIXML\r\n<Objs Version=\"1.1.0.1\"></Objs>\r\nKEY_DEPLOYED:C:\\Users\\John Doe\\.ssh\\authorized_keys\r\n",
+			marker: "KEY_DEPLOYED:",
+			want:   "C:\\Users\\John Doe\\.ssh\\authorized_keys",
+		},
+		{
+			name:   "already exists marker",
+			output: "noise\nKEY_ALREADY_EXISTS:C:\\Users\\test\\.ssh\\authorized_keys",
+			marker: "KEY_ALREADY_EXISTS:",
+			want:   "C:\\Users\\test\\.ssh\\authorized_keys",
+		},
+		{
+			name:   "marker without value",
+			output: "KEY_DEPLOYED:",
+			marker: "KEY_DEPLOYED:",
+			want:   "(unknown)",
+		},
+		{
+			name:   "marker absent",
+			output: "KEY_ALREADY_EXISTS:C:\\path",
+			marker: "KEY_DEPLOYED:",
+			want:   "(unknown)",
+		},
+		{
+			// 配置先パスが他マーカーの文字列を含んでも拾わない（行頭一致を要求する）
+			name:   "other marker appears inside the path",
+			output: "KEY_DEPLOYED:C:\\Users\\KEY_ALREADY_EXISTS\\.ssh\\authorized_keys",
+			marker: "KEY_ALREADY_EXISTS:",
+			want:   "(unknown)",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := markerValue(c.output, c.marker); got != c.want {
+				t.Errorf("markerValue() = %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
+// マーカーが配置先パスを載せるようになったため、出力全体への部分一致で分岐すると
+// パスに含まれる別マーカーの文字列を拾って結果を取り違える。行頭一致を要求すること。
+func TestHasMarkerLine(t *testing.T) {
+	deployedIntoTrapPath := "KEY_DEPLOYED:C:\\Users\\KEY_ALREADY_EXISTS\\.ssh\\authorized_keys"
+
+	cases := []struct {
+		name   string
+		output string
+		marker string
+		want   bool
+	}{
+		{
+			name:   "path containing another marker is not matched",
+			output: deployedIntoTrapPath,
+			marker: "KEY_ALREADY_EXISTS:",
+			want:   false,
+		},
+		{
+			name:   "own marker still matched on the same line",
+			output: deployedIntoTrapPath,
+			marker: "KEY_DEPLOYED:",
+			want:   true,
+		},
+		{
+			name:   "marker after CLIXML noise",
+			output: "#< CLIXML\r\n<Objs Version=\"1.1.0.1\"></Objs>\r\nKEY_DEPLOYED:C:\\path\r\n",
+			marker: "KEY_DEPLOYED:",
+			want:   true,
+		},
+		{
+			name:   "acl failure marker with detail after pipe",
+			output: "noise\nACL_SET_FAILED_DIR|Access is denied.",
+			marker: "ACL_SET_FAILED_DIR",
+			want:   true,
+		},
+		{
+			name:   "acl marker mentioned mid-line is not matched",
+			output: "KEY_DEPLOYED:C:\\Users\\ACL_SET_FAILED_DIR\\.ssh\\authorized_keys",
+			marker: "ACL_SET_FAILED_DIR",
+			want:   false,
+		},
+		{
+			name:   "absent",
+			output: "KEY_DEPLOYED:C:\\path",
+			marker: "DRY_RUN_TARGET:",
+			want:   false,
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := hasMarkerLine(c.output, c.marker); got != c.want {
+				t.Errorf("hasMarkerLine(%q, %q) = %v, want %v", c.output, c.marker, got, c.want)
+			}
+		})
+	}
+}
+
 func TestExtractAclErrorDetail(t *testing.T) {
 	cases := []struct {
 		name   string
