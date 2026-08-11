@@ -31,14 +31,23 @@ GitHub Actions の CI が PR / master push で `make check` 相当を実行す�
 
 ## 次のフェーズ候補
 
-### 配布チャネルの追加（Homebrew tap / Scoop bucket）— 見送り（2026-08-11）
+### 配布チャネルの追加 — WinGet を採用、Homebrew / Scoop は不採用（2026-08-11）
 
 GoReleaser によるアーカイブ + checksums 配布は導入済み（v1.7.1〜）で、導線は
-GitHub Releases（正本）+ `go install` に整理済み。tap / bucket はここでは足さない。判断根拠は `LESSONS.md`。
+GitHub Releases（正本）+ `go install` に整理済み。その後段として **WinGet** を追加する。
 
-覆す条件: (1) 外部から tap / bucket の要望が実際に来る、または (2) GoReleaser が同一リポジトリへ
-Scoop manifest を commit するのに workflow 既存の `GITHUB_TOKEN` で足りる（＝PAT 不要）と
-検証できた場合、Scoop から再検討する。
+クライアント環境で切ると、`ssh-copy-id` が**存在しない**のは Windows だけ（WSL/Linux/macOS には
+あり、Windows 非対応なだけ）。代替不在の層に届けるのが目的なので Windows 向けチャネルを選ぶ。
+個人 bucket / tap は `scoop bucket add` / `brew tap` を先に踏ませる必要があり README を読んだ人に
+しか届かないため、素の `winget search` に載る WinGet を採る。判断の詳細は `LESSONS.md`。
+
+- [ ] `microsoft/winget-pkgs` の fork 作成と PAT の secret 登録（手作業）
+- [ ] `.goreleaser.yaml` に `winget:` を追加し、`release.yml` にトークンを配線
+- [ ] README / README_ja のインストール導線に WinGet を追記
+
+不採用: Homebrew（`brews:` は GoReleaser v2.16 で hard deprecation ＝ `goreleaser check` が失敗し
+formula は選べない。`homebrew_casks:` は確実に効くのが macOS のみで、そこは既に `go install` /
+tarball がある層）、Scoop（発見性が無く、コストは WinGet と同額）。
 
 ## リポジトリ
 
