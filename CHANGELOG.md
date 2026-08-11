@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- Windows distribution moved from WinGet to a [Scoop](https://scoop.sh/) bucket at [kwrkb/scoop-bucket](https://github.com/kwrkb/scoop-bucket). Install with `scoop bucket add kwrkb https://github.com/kwrkb/scoop-bucket` followed by `scoop install ssh-pushkey`. The WinGet manifest pull request opened for 1.8.0 was blocked by a Microsoft Defender false positive during `microsoft/winget-pkgs` validation. Because this tool connects over SSH, appends to `authorized_keys`, and rewrites ACLs with `icacls` — behaviour a heuristic scanner cannot distinguish from installing a backdoor — that block is likely to recur, which would make every release depend on an external review passing. A Scoop bucket is self-contained and cannot stall a release. WinGet is not published anymore.
+
 ## [1.8.0] - 2026-08-11
 
 ### Added

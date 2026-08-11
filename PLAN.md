@@ -31,26 +31,31 @@ GitHub Actions の CI が PR / master push で `make check` 相当を実行す�
 
 ## 次のフェーズ候補
 
-### 配布チャネルの追加 — WinGet を採用、Homebrew / Scoop は不採用（2026-08-11）
+### 配布チャネルの追加 — Scoop を採用（2026-08-12。WinGet から切替）
 
 GoReleaser によるアーカイブ + checksums 配布は導入済み（v1.7.1〜）で、導線は
-GitHub Releases（正本）+ `go install` に整理済み。その後段として **WinGet** を追加する。
+GitHub Releases（正本）+ `go install` に整理済み。その後段として **Scoop** を追加する。
 
 クライアント環境で切ると、`ssh-copy-id` が**存在しない**のは Windows だけ（WSL/Linux/macOS には
 あり、Windows 非対応なだけ）。代替不在の層に届けるのが目的なので Windows 向けチャネルを選ぶ。
-個人 bucket / tap は `scoop bucket add` / `brew tap` を先に踏ませる必要があり README を読んだ人に
-しか届かないため、素の `winget search` に載る WinGet を採る。判断の詳細は `LESSONS.md`。
 
-- [x] `microsoft/winget-pkgs` の fork 作成と PAT の secret 登録（手作業）
-- [x] `.goreleaser.yaml` に `winget:` を追加し、`release.yml` にトークンを配線
-- [x] README / README_ja のインストール導線に WinGet を追記
-- [ ] 次の `v*` タグで実際に PR が作られ、`microsoft/winget-pkgs` にマージされるまで確認する
-      （`goreleaser release --snapshot` で manifest 生成までは検証済み。upstream の検証パイプラインは実タグでしか通らない）
-- [ ] 上記マージ後、README / README_ja の「次のリリース以降で利用可能」注記を外す
+当初は発見性（素の `winget search` に載る）を理由に WinGet を採ったが、v1.8.0 の manifest PR が
+`microsoft/winget-pkgs` の検証で Defender 誤検知に止められた。本ツールの挙動は
+ヒューリスティックにはバックドア設置と区別がつかず再発が見込まれ、毎リリースが外部の審査に
+依存する。発見性より**リリースが他者の審査で止まらないこと**を優先し Scoop に切り替えた。
+判断の詳細は `LESSONS.md`。
 
-不採用: Homebrew（`brews:` は GoReleaser v2.16 で hard deprecation ＝ `goreleaser check` が失敗し
+- [x] `kwrkb/scoop-bucket`（public）作成と PAT の secret 登録
+- [x] `.goreleaser.yaml` を `winget:` から `scoops:` へ差し替え、`release.yml` のトークンを配線
+- [x] README / README_ja のインストール導線を Scoop に差し替え
+- [ ] 次の `v*` タグで bucket に manifest が push されることを確認する
+      （`goreleaser release --snapshot` で manifest 生成までは検証済み）
+- [ ] 上記確認後、README / README_ja の「次のリリース以降で利用可能」注記を外す
+
+不採用: WinGet（上記。誤検知が解消し、かつ再発しないと確認できたら再検討）、
+Homebrew（`brews:` は GoReleaser v2.16 で hard deprecation ＝ `goreleaser check` が失敗し
 formula は選べない。`homebrew_casks:` は確実に効くのが macOS のみで、そこは既に `go install` /
-tarball がある層）、Scoop（発見性が無く、コストは WinGet と同額）。
+tarball がある層）。
 
 ## リポジトリ
 
