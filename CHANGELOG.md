@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.8.0] - 2026-08-11
+
 ### Added
 
 - WinGet distribution. Releases now generate a WinGet manifest and open a pull request against `microsoft/winget-pkgs`. Windows OpenSSH ships no `ssh-copy-id` at all, making it the one client platform with no alternative; WinGet is preinstalled on Windows 11 and, unlike a personal Scoop bucket or Homebrew tap, is searchable without adding a source first. The package installs as a portable, so the binary lands on `PATH` without an installer. **`winget install kwrkb.ssh-pushkey` does not work yet:** this release only opens the manifest pull request, and WinGet cannot find the package until Microsoft reviews and merges it. Until then, use the archives below or `go install`.
@@ -181,7 +183,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Duplicate key detection
 - PowerShell remote execution via `-EncodedCommand` (UTF-16LE Base64)
 
-[Unreleased]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.7.3...HEAD
+[Unreleased]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.8.0...HEAD
+[1.8.0]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.7.3...v1.8.0
 [1.7.3]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.7.2...v1.7.3
 [1.7.2]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.7.1...v1.7.2
 [1.7.1]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.7.0...v1.7.1
