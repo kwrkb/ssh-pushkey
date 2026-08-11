@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
-- WinGet distribution. Releases now generate a WinGet manifest and open a pull request against `microsoft/winget-pkgs`, so Windows users can install with `winget install kwrkb.ssh-pushkey`. Windows OpenSSH ships no `ssh-copy-id` at all, making it the one client platform with no alternative; WinGet is preinstalled on Windows 11 and, unlike a personal Scoop bucket or Homebrew tap, is searchable without adding a source first. The package installs as a portable, so the binary lands on `PATH` without an installer.
+- WinGet distribution. Releases now generate a WinGet manifest and open a pull request against `microsoft/winget-pkgs`. Windows OpenSSH ships no `ssh-copy-id` at all, making it the one client platform with no alternative; WinGet is preinstalled on Windows 11 and, unlike a personal Scoop bucket or Homebrew tap, is searchable without adding a source first. The package installs as a portable, so the binary lands on `PATH` without an installer. **`winget install kwrkb.ssh-pushkey` does not work yet:** this release only opens the manifest pull request, and WinGet cannot find the package until Microsoft reviews and merges it. Until then, use the archives below or `go install`.
 
 ### Changed
 

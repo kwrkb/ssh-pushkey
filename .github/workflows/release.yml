@@ -45,7 +45,18 @@ jobs:
       # GoReleaser の `--release-notes` は changelog パイプ内で読み込まれるため、
       # .goreleaser.yaml の `changelog.disable: true` でパイプごとスキップされ無視される。
       # 配布物生成は GoReleaser に任せ、本文だけは公開後に CHANGELOG 抽出で明示設定する。
+      #
+      # GoReleaser の publish は release を公開してから winget を走らせる（release が先、
+      # winget が後 — 後者は release の URL を使うため）。つまり winget の失敗時には
+      # 「リリースは公開済みだが本文が空」という状態になり得る。前ステップが失敗しても
+      # 本文設定は必ず試みる。リリース自体が存在しない場合（publish 前の失敗）は何もしない。
       - name: Set release notes from CHANGELOG
-        run: gh release edit "$GITHUB_REF_NAME" --notes-file /tmp/release-notes.md
+        if: ${{ !cancelled() }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release edit "$GITHUB_REF_NAME" --notes-file /tmp/release-notes.md
+          else
+            echo "release $GITHUB_REF_NAME does not exist yet; skipping notes update"
+          fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

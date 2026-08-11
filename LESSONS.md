@@ -9,7 +9,7 @@
 - **覆す条件**: GitHub が fine-grained PAT で cross-fork PR をサポートしたら移行する（roadmap #600 で言及あり、時期未定）
 
 ### winget の manifest は `--snapshot` で生成まで検証できる
-- `.goreleaser.yaml` の不備はタグ push でしか発火せず、失敗すると「実タグ上に半端なリリース」が残る。winget パイプも同じ危険があるが、`skip_upload: auto` を付けておけば `goreleaser release --snapshot --clean` で**アップロードせず manifest 生成だけ**を実行でき、`dist/winget/manifests/.../*.yaml` を目視できる
+- `.goreleaser.yaml` の不備はタグ push でしか発火せず、失敗すると「実タグ上に半端なリリース」が残る。winget パイプも同じ危険があるが、`goreleaser release --snapshot --clean` は publish 段階ごとスキップするため、**アップロードせず manifest 生成だけ**を実行して `dist/winget/manifests/.../*.yaml` を目視できる。`WINGET_GITHUB_TOKEN` を渡さなくても exit 0 になることで、publish が試みられていないと確認できる（`skip_upload: auto` は無関係。あれはプレリリース時のアップロードを抑止する設定で、snapshot の挙動には効かない）
 - 実際に検証すべきは `InstallerType: zip` + `NestedInstallerFiles.RelativeFilePath` が**アーカイブ内の実パスと一致しているか**。`unzip -l` で zip 直下に `ssh-pushkey.exe` があることを確認して突き合わせた。ここがずれると winget 側の検証で落ちる
 - **ルール**: winget / scoop / homebrew のパイプを足したら、タグを打つ前に `--snapshot` で manifest を生成し、アーカイブの実レイアウトと突き合わせる。スキーマ検証（`goreleaser check`）だけでは、アーカイブ内のパス不一致は検出できない
 
