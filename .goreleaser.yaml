@@ -51,3 +51,48 @@ release:
   github:
     owner: kwrkb
     name: ssh-pushkey
+
+# WinGet — Windows クライアント向けの配布チャネル。
+# Windows OpenSSH には ssh-copy-id が存在しないため、代替が無いのはこの層だけ。
+# 個人 bucket / tap は事前の `scoop bucket add` / `brew tap` が要り発見性が無いのに対し、
+# WinGet は素の `winget search` に載り Windows 11 に標準搭載されている（判断は LESSONS.md）。
+#
+# トークンはリリース本体用の GITHUB_TOKEN とは別。fork へ push し upstream へ PR を開くには
+# 別リポジトリへの write が要り、workflow 既定の GITHUB_TOKEN では権限が届かないため。
+# fine-grained PAT は不可（PR 作成にはトークンの resource owner が base 側である必要があり、
+# microsoft を owner にした PAT は作れない）。classic PAT を使う。
+winget:
+  - name: ssh-pushkey
+    package_identifier: kwrkb.ssh-pushkey
+    publisher: kwrkb
+    publisher_url: https://github.com/kwrkb
+    homepage: https://github.com/kwrkb/ssh-pushkey
+    short_description: An ssh-copy-id alternative for Windows OpenSSH servers
+    description: |-
+      Deploys an SSH public key to a Windows OpenSSH server over password
+      authentication, handling the Windows-specific pitfalls automatically:
+      BOM-less UTF-8, the administrators_authorized_keys branching, and icacls
+      ACLs set with well-known SIDs so it works on non-English installations.
+    license: MIT
+    license_url: https://github.com/kwrkb/ssh-pushkey/blob/master/LICENSE
+    release_notes_url: "https://github.com/kwrkb/ssh-pushkey/releases/tag/{{ .Tag }}"
+    tags:
+      - ssh
+      - ssh-copy-id
+      - openssh
+      - windows
+      - cli
+    # プレリリース/スナップショットでは PR を出さない
+    skip_upload: auto
+    repository:
+      owner: kwrkb
+      name: winget-pkgs
+      branch: "ssh-pushkey-{{ .Version }}"
+      token: "{{ .Env.WINGET_GITHUB_TOKEN }}"
+      pull_request:
+        enabled: true
+        draft: false
+        base:
+          owner: microsoft
+          name: winget-pkgs
+          branch: master

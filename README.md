@@ -12,7 +12,13 @@ Connects via password authentication and automatically deploys your public key. 
 
 ## Installation
 
-Download an archive for your platform from **[GitHub Releases](https://github.com/kwrkb/ssh-pushkey/releases)** — the canonical distribution source. Each release ships `ssh-pushkey_<os>_<arch>.tar.gz` (`.zip` on Windows) with a `checksums.txt` to verify against.
+On Windows:
+
+```powershell
+winget install kwrkb.ssh-pushkey
+```
+
+On any platform, download an archive from **[GitHub Releases](https://github.com/kwrkb/ssh-pushkey/releases)** — the canonical distribution source. Each release ships `ssh-pushkey_<os>_<arch>.tar.gz` (`.zip` on Windows) with a `checksums.txt` to verify against.
 
 Or install from source:
 

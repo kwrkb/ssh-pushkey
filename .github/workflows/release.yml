@@ -37,6 +37,10 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # WinGet の manifest は fork(kwrkb/winget-pkgs) へ push し microsoft/winget-pkgs へ
+          # PR を開くため、リポジトリ既定の GITHUB_TOKEN では権限が届かない。classic PAT を渡す
+          # （fine-grained PAT は cross-fork の PR 作成ができない）。
+          WINGET_GITHUB_TOKEN: ${{ secrets.WINGET_GITHUB_TOKEN }}
 
       # GoReleaser の `--release-notes` は changelog パイプ内で読み込まれるため、
       # .goreleaser.yaml の `changelog.disable: true` でパイプごとスキップされ無視される。

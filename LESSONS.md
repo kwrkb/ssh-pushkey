@@ -1,5 +1,18 @@
 # LESSONS
 
+## WinGet 配布の実装 (2026-08-11)
+
+### cross-fork の PR を作るトークンは classic PAT でなければならない
+- WinGet は fork（`kwrkb/winget-pkgs`）へ push して upstream（`microsoft/winget-pkgs`）へ PR を出す構成になる。最小権限のつもりで fine-grained PAT を選ぶと**動かない**: PR 作成にはトークンの resource owner が **base（ターゲット）側**である必要があり、自分が所有もメンバーでもない `microsoft` を resource owner にした PAT は作成できない。実行すると `Resource not accessible by personal access token`（403）になる
+- **却下した案**: (A) fine-grained PAT — 上記の理由で cross-fork PR が作れない。GitHub 公式の解決策は提供されていない。(B) workflow 既定の `secrets.GITHUB_TOKEN` — 当該リポジトリにしか権限が無く、fork への push すら届かない
+- **決め手**: classic PAT の `public_repo` スコープを採用。必要な動作は「public な fork への write」と「public な base への PR 作成」の2つだけで、`repo`（フル）だと private リポジトリ全体まで渡すことになり不要に広い
+- **覆す条件**: GitHub が fine-grained PAT で cross-fork PR をサポートしたら移行する（roadmap #600 で言及あり、時期未定）
+
+### winget の manifest は `--snapshot` で生成まで検証できる
+- `.goreleaser.yaml` の不備はタグ push でしか発火せず、失敗すると「実タグ上に半端なリリース」が残る。winget パイプも同じ危険があるが、`skip_upload: auto` を付けておけば `goreleaser release --snapshot --clean` で**アップロードせず manifest 生成だけ**を実行でき、`dist/winget/manifests/.../*.yaml` を目視できる
+- 実際に検証すべきは `InstallerType: zip` + `NestedInstallerFiles.RelativeFilePath` が**アーカイブ内の実パスと一致しているか**。`unzip -l` で zip 直下に `ssh-pushkey.exe` があることを確認して突き合わせた。ここがずれると winget 側の検証で落ちる
+- **ルール**: winget / scoop / homebrew のパイプを足したら、タグを打つ前に `--snapshot` で manifest を生成し、アーカイブの実レイアウトと突き合わせる。スキーマ検証（`goreleaser check`）だけでは、アーカイブ内のパス不一致は検出できない
+
 ## 配布チャネル再判断: WinGet 採用 / Homebrew・Scoop 不採用 (2026-08-11)
 
 **同日の「改善候補の取捨選択」エントリで tap / bucket を見送りとした結論を、実測に基づき差し替える。**
