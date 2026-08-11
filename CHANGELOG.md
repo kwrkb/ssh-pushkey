@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.8.1] - 2026-08-12
+
 ### Changed
 
 - Windows distribution moved from WinGet to a [Scoop](https://scoop.sh/) bucket at [kwrkb/scoop-bucket](https://github.com/kwrkb/scoop-bucket). Install with `scoop bucket add kwrkb https://github.com/kwrkb/scoop-bucket` followed by `scoop install ssh-pushkey`. The WinGet manifest pull request opened for 1.8.0 was blocked by a Microsoft Defender false positive during `microsoft/winget-pkgs` validation. Because this tool connects over SSH, appends to `authorized_keys`, and rewrites ACLs with `icacls` — behaviour a heuristic scanner cannot distinguish from installing a backdoor — that block is likely to recur, which would make every release depend on an external review passing. A Scoop bucket is self-contained and cannot stall a release. WinGet is not published anymore.
@@ -187,7 +189,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Duplicate key detection
 - PowerShell remote execution via `-EncodedCommand` (UTF-16LE Base64)
 
-[Unreleased]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.8.0...HEAD
+[Unreleased]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.8.1...HEAD
+[1.8.1]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.8.0...v1.8.1
 [1.8.0]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.7.3...v1.8.0
 [1.7.3]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.7.2...v1.7.3
 [1.7.2]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.7.1...v1.7.2
