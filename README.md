@@ -18,6 +18,10 @@ On Windows:
 winget install kwrkb.ssh-pushkey
 ```
 
+> **Available from the next release onward.** The initial manifest has to be
+> reviewed and merged into [microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs)
+> before WinGet can find the package; until then, use one of the options below.
+
 On any platform, download an archive from **[GitHub Releases](https://github.com/kwrkb/ssh-pushkey/releases)** — the canonical distribution source. Each release ships `ssh-pushkey_<os>_<arch>.tar.gz` (`.zip` on Windows) with a `checksums.txt` to verify against.
 
 Or install from source:

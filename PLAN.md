@@ -46,6 +46,7 @@ GitHub Releases（正本）+ `go install` に整理済み。その後段とし�
 - [x] README / README_ja のインストール導線に WinGet を追記
 - [ ] 次の `v*` タグで実際に PR が作られ、`microsoft/winget-pkgs` にマージされるまで確認する
       （`goreleaser release --snapshot` で manifest 生成までは検証済み。upstream の検証パイプラインは実タグでしか通らない）
+- [ ] 上記マージ後、README / README_ja の「次のリリース以降で利用可能」注記を外す
 
 不採用: Homebrew（`brews:` は GoReleaser v2.16 で hard deprecation ＝ `goreleaser check` が失敗し
 formula は選べない。`homebrew_casks:` は確実に効くのが macOS のみで、そこは既に `go install` /
