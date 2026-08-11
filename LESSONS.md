@@ -1,5 +1,23 @@
 # LESSONS
 
+## 改善候補の取捨選択: 配布導線 / tap・bucket / --verbose (2026-08-11)
+
+### Homebrew tap / Scoop bucket は「別リポジトリが構造上必須か」で切り分ける
+- 配布チャネル追加の可否を運用コストの多寡で論じようとしたが、この案件はそれ以前の構造的制約で決まった。Homebrew の tap は `brew tap kwrkb/<name>` が `github.com/kwrkb/homebrew-<name>` に解決される命名規約のため、**第2のリポジトリと、そこへの write 権限を持つ PAT の secret 登録が必須**になる。一方 Scoop の bucket は manifest の置き場所に規約上の制約がなく、同一リポジトリの `bucket/` ディレクトリで成立し得る
+- **却下した案**: (A) Homebrew tap を今回入れる — 「いきなり別リポジトリ作成や外部公開はしない」という今回の明示制約に正面から抵触する。(B) Scoop bucket だけ今回入れる — 同一リポジトリ経路なら安いが、GoReleaser が manifest を commit するのに workflow 既存の `GITHUB_TOKEN`（contents:write）で足りるか PAT が要るかが未検証で、安いかどうかが確定していない。(C) 運用コストを見積もって総合判断 — 制約と未検証項目で既に決まるため、見積もりは判断に寄与しない
+- **決め手**: `LESSONS.md` の「配布チャネルは段階導入し、土台と tap/bucket を分ける」（2026-06-20）に既に段階分離のルールが記録済みで、今回やるべきは「今がその段階か」の判定だけだった。外部からの要望は観測されておらず、`GITHUB_TOKEN` で足りるかも未検証 → 両方とも見送り、`PLAN.md` に覆す条件として記録
+- **覆す条件**: (1) 外部から tap / bucket の要望が実際に来る、または (2) GoReleaser が同一リポジトリへ Scoop manifest を commit するのに `GITHUB_TOKEN` で足りる（PAT 不要）と検証できた場合、Scoop から再検討する
+
+### 診断フラグを足す前に「既に出ている出力」と実際の欠落を突き合わせる
+- `--verbose` で出したい候補として resolved host/port/user・public key source・administrator 判定・effective AuthorizedKeysFile・host key verification path・ACL 適用対象・deploy result が挙がったが、コードを当たると大半は既に通常実行で stdout に出ていた（`main.go` の `=> Public key loaded:` / `=> Connecting to %s@%s:%d`、`deploy.go` の `=> Checking Administrators group...` / `=> administrators_authorized_keys is enabled (sshd -T)` / `=> Target: %s`）。「静かな UX に診断を足す」という前提自体が実態と合っていなかった
+- **却下した案**: (A) `--verbose` を実装する — 新規フラグ1本と出力の二重系統を持ち込む対価が、既出力との重複でほぼ相殺される。(B) known_hosts パスや `sshd -T` の生の `AuthorizedKeysFile` 値も出す — 「非スコープ」と明示されている `doctor` 的診断機能への入口になる
+- **決め手**: 突き合わせで残った実際の欠落は1点だけだった。**dry-run は `DRY_RUN_TARGET:` で配置先パスを出すのに、通常実行の `KEY_DEPLOYED` はパスを持たない**という非対称。非 Admin 時の配置先は `$env:USERPROFILE` 展開後にしか確定せず Go 側で組み立てられないため、既存の `DRY_RUN_TARGET:` と同じ方式でマーカーに `$keyFile` を載せる（`KEY_DEPLOYED:<path>` / `KEY_ALREADY_EXISTS:<path>`）形にした。フラグ追加ゼロで欠落が埋まる
+- **覆す条件**: 「どこで失敗したか分からない」という報告が実際に来て、かつ既存の stdout と `--dry-run` の組み合わせでは切り分けられないケースが具体的に示された場合
+
+### 「既存機能で足りる」を不採用の論拠にするなら、その機能が発見可能かを先に確認する
+- `--verbose` 不採用の論拠を「`--dry-run` で足りる」と書こうとした時点で、その `--dry-run` が README の Options 表に載っていないことに気づいた。`CHANGELOG.md` を確認すると v1.6.0（2026-06-20）で追加済み、README の最終更新も同日なのに表だけ更新漏れしていた（`--help` も同様）
+- **ルール**: 新機能を「既存機能で代替できる」と言って却下するときは、その既存機能がドキュメント上で発見可能かを必ず確認する。発見できない機能は存在しないのと同じで、却下の論拠が成立しない。ドキュメント整備が却下の前提条件になる
+
 ## env ファイルの 1Password 参照は source では解決できない (2026-08-10)
 
 ### `op://` 参照を含む env ファイルは `.`（source）ではなく `op run --env-file` に渡す

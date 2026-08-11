@@ -12,11 +12,15 @@ Connects via password authentication and automatically deploys your public key. 
 
 ## Installation
 
-Download binaries from [GitLab Releases](https://gitlab.com/kwrkb/ssh-pushkey/-/releases) / [GitHub Releases](https://github.com/kwrkb/ssh-pushkey/releases), or:
+Download an archive for your platform from **[GitHub Releases](https://github.com/kwrkb/ssh-pushkey/releases)** — the canonical distribution source. Each release ships `ssh-pushkey_<os>_<arch>.tar.gz` (`.zip` on Windows) with a `checksums.txt` to verify against.
+
+Or install from source:
 
 ```bash
 go install github.com/kwrkb/ssh-pushkey@latest
 ```
+
+[GitLab Releases](https://gitlab.com/kwrkb/ssh-pushkey/-/releases) is a mirror. It publishes the same set of platform builds, but as bare binaries with no checksums file — prefer GitHub unless you specifically need the GitLab mirror.
 
 ## Usage
 
@@ -60,8 +64,16 @@ Supported key types include `ed25519`, `rsa`, `ecdsa`, and FIDO/U2F (`sk-ssh-ed2
 |------|---------|-------------|
 | `-i` | *(auto-discover)* | Path to the public key file |
 | `-p` | `22` | SSH port number (or `Port` from `~/.ssh/config`) |
+| `-n`, `--dry-run` | `false` | Preview the deployment target without writing the key |
 | `--insecure` | `false` | Skip host key verification (not recommended) |
+| `--help` | - | Show help |
 | `--version` | - | Show version |
+
+`--dry-run` reports which file the key *would* go to and whether it is already
+present, without writing anything or touching ACLs (like `ssh-copy-id -n`). It
+still connects and prompts for the password, because the target is resolved on
+the remote host. On a real run the destination path is printed too, so you can
+confirm after the fact which file was written.
 
 ### Examples
 

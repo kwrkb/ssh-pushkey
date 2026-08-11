@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- A successful run now prints the file the key was written to (e.g. `=> Key deployed to C:\ProgramData\ssh\administrators_authorized_keys`), and a skipped run prints where the key was already found. Previously only `--dry-run` reported the destination path, so a real run left it implicit.
+- Documentation: installation now lists GitHub Releases first as the canonical distribution source, and describes GitLab Releases as a mirror. The artifact difference is stated explicitly: GitHub ships archives plus `checksums.txt` (GoReleaser), GitLab ships bare binaries without checksums.
+- Documentation: the options table now documents `-n` / `--dry-run` and `--help`, which have shipped since 1.6.0 but were missing from both READMEs.
+
 ## [1.7.3] - 2026-08-11
 
 ### Changed

@@ -29,13 +29,16 @@ Issue #4・#16・#17 は完了。`CHANGELOG.md` に各リリースの内容、`L
 開発環境も整備済み: `Makefile` が正規の入口、統合テストは 2 アカウント（管理者 / 一般）で実行可能、
 GitHub Actions の CI が PR / master push で `make check` 相当を実行する。
 
-## 次のフェーズ候補（未着手）
+## 次のフェーズ候補
 
-### 配布チャネルの追加（Homebrew tap / Scoop bucket）
+### 配布チャネルの追加（Homebrew tap / Scoop bucket）— 見送り（2026-08-11）
 
-GoReleaser によるアーカイブ + checksums 配布は導入済み（v1.7.1〜）。その後段。
+GoReleaser によるアーカイブ + checksums 配布は導入済み（v1.7.1〜）で、導線は
+GitHub Releases（正本）+ `go install` に整理済み。tap / bucket はここでは足さない。判断根拠は `LESSONS.md`。
 
-- [ ] 採用可否の判断。採用する場合は tap / bucket リポジトリ作成・トークン設定・README のダウンロード導線更新を併せて決める
+覆す条件: (1) 外部から tap / bucket の要望が実際に来る、または (2) GoReleaser が同一リポジトリへ
+Scoop manifest を commit するのに workflow 既存の `GITHUB_TOKEN` で足りる（＝PAT 不要）と
+検証できた場合、Scoop から再検討する。
 
 ## リポジトリ
 

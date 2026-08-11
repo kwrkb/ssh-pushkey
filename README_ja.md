@@ -12,11 +12,15 @@ Windows OpenSSH サーバー向けの `ssh-copy-id` 代替ツール。
 
 ## インストール
 
-[GitLab Releases](https://gitlab.com/kwrkb/ssh-pushkey/-/releases) / [GitHub Releases](https://github.com/kwrkb/ssh-pushkey/releases) からバイナリをダウンロード、または:
+配布の正本は **[GitHub Releases](https://github.com/kwrkb/ssh-pushkey/releases)**。各リリースは `ssh-pushkey_<os>_<arch>.tar.gz`（Windows は `.zip`）のアーカイブと、検証用の `checksums.txt` を配布している。
+
+ソースから入れる場合:
 
 ```bash
 go install github.com/kwrkb/ssh-pushkey@latest
 ```
+
+[GitLab Releases](https://gitlab.com/kwrkb/ssh-pushkey/-/releases) はミラー。同じプラットフォーム構成をビルドしているが、生バイナリのみで checksums ファイルは無い。特に理由が無ければ GitHub を使う。
 
 ## 使い方
 
@@ -57,8 +61,15 @@ ssh-pushkey myserver        # ~/.ssh/config から User/HostName/Port を解決
 |--------|-----------|------|
 | `-i` | *（自動探索）* | 公開鍵ファイルのパス |
 | `-p` | `22` | SSH ポート番号（または `~/.ssh/config` の `Port`） |
+| `-n`, `--dry-run` | `false` | 書き込まずに配置先だけをプレビュー |
 | `--insecure` | `false` | ホスト鍵検証をスキップ（非推奨） |
+| `--help` | - | ヘルプ表示 |
 | `--version` | - | バージョン表示 |
+
+`--dry-run` は「どのファイルに配置されるか」と「既に登録済みか」だけを報告し、書き込みも
+ACL 設定も行わない（`ssh-copy-id -n` 相当）。配置先はリモート側で判定するため、接続と
+パスワード入力は発生する。通常実行でも配置先パスを出力するので、どのファイルに書かれたかは
+事後にも確認できる。
 
 ### 例
 
