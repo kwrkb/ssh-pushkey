@@ -12,15 +12,15 @@ Connects via password authentication and automatically deploys your public key. 
 
 ## Installation
 
-On Windows:
+On Windows, via [Scoop](https://scoop.sh/):
 
 ```powershell
-winget install kwrkb.ssh-pushkey
+scoop bucket add kwrkb https://github.com/kwrkb/scoop-bucket
+scoop install ssh-pushkey
 ```
 
-> **Available from the next release onward.** The initial manifest has to be
-> reviewed and merged into [microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs)
-> before WinGet can find the package; until then, use one of the options below.
+> **Available from the next release onward.** The bucket is populated when a
+> release is published; until then, use one of the options below.
 
 On any platform, download an archive from **[GitHub Releases](https://github.com/kwrkb/ssh-pushkey/releases)** — the canonical distribution source. Each release ships `ssh-pushkey_<os>_<arch>.tar.gz` (`.zip` on Windows) with a `checksums.txt` to verify against.
 
