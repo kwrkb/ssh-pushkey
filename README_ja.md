@@ -12,7 +12,17 @@ Windows OpenSSH サーバー向けの `ssh-copy-id` 代替ツール。
 
 ## インストール
 
-配布の正本は **[GitHub Releases](https://github.com/kwrkb/ssh-pushkey/releases)**。各リリースは `ssh-pushkey_<os>_<arch>.tar.gz`（Windows は `.zip`）のアーカイブと、検証用の `checksums.txt` を配布している。
+Windows の場合:
+
+```powershell
+winget install kwrkb.ssh-pushkey
+```
+
+> **次のリリース以降で利用可能になる。** 最初の manifest が
+> [microsoft/winget-pkgs](https://github.com/microsoft/winget-pkgs) にレビュー・マージ
+> されるまで WinGet はこのパッケージを見つけられない。それまでは下記の方法を使うこと。
+
+全プラットフォーム共通の正本は **[GitHub Releases](https://github.com/kwrkb/ssh-pushkey/releases)**。各リリースは `ssh-pushkey_<os>_<arch>.tar.gz`（Windows は `.zip`）のアーカイブと、検証用の `checksums.txt` を配布している。
 
 ソースから入れる場合:
 

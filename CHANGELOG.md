@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- WinGet distribution. Releases now generate a WinGet manifest and open a pull request against `microsoft/winget-pkgs`. Windows OpenSSH ships no `ssh-copy-id` at all, making it the one client platform with no alternative; WinGet is preinstalled on Windows 11 and, unlike a personal Scoop bucket or Homebrew tap, is searchable without adding a source first. The package installs as a portable, so the binary lands on `PATH` without an installer. **`winget install kwrkb.ssh-pushkey` does not work yet:** this release only opens the manifest pull request, and WinGet cannot find the package until Microsoft reviews and merges it. Until then, use the archives below or `go install`.
+
 ### Changed
 
 - A successful run now prints the file the key was written to (e.g. `=> Key deployed to C:\ProgramData\ssh\administrators_authorized_keys`), and a skipped run prints where the key was already found. Previously only `--dry-run` reported the destination path, so a real run left it implicit.

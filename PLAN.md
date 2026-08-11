@@ -41,9 +41,12 @@ GitHub Releases（正本）+ `go install` に整理済み。その後段とし�
 個人 bucket / tap は `scoop bucket add` / `brew tap` を先に踏ませる必要があり README を読んだ人に
 しか届かないため、素の `winget search` に載る WinGet を採る。判断の詳細は `LESSONS.md`。
 
-- [ ] `microsoft/winget-pkgs` の fork 作成と PAT の secret 登録（手作業）
-- [ ] `.goreleaser.yaml` に `winget:` を追加し、`release.yml` にトークンを配線
-- [ ] README / README_ja のインストール導線に WinGet を追記
+- [x] `microsoft/winget-pkgs` の fork 作成と PAT の secret 登録（手作業）
+- [x] `.goreleaser.yaml` に `winget:` を追加し、`release.yml` にトークンを配線
+- [x] README / README_ja のインストール導線に WinGet を追記
+- [ ] 次の `v*` タグで実際に PR が作られ、`microsoft/winget-pkgs` にマージされるまで確認する
+      （`goreleaser release --snapshot` で manifest 生成までは検証済み。upstream の検証パイプラインは実タグでしか通らない）
+- [ ] 上記マージ後、README / README_ja の「次のリリース以降で利用可能」注記を外す
 
 不採用: Homebrew（`brews:` は GoReleaser v2.16 で hard deprecation ＝ `goreleaser check` が失敗し
 formula は選べない。`homebrew_casks:` は確実に効くのが macOS のみで、そこは既に `go install` /
