@@ -65,10 +65,13 @@ release:
 # トークンはリリース本体用の GITHUB_TOKEN とは別。別リポジトリ（kwrkb/scoop-bucket）への
 # write が要り、workflow 既定の GITHUB_TOKEN は当該リポジトリにしか権限が無いため。
 #
-# directory は指定しない。サブディレクトリに置くと `scoop bucket list` が 0 manifests と
-# 表示されるため、GoReleaser 公式もリポジトリ直下を推奨している。
+# directory は `bucket` にする。scoop の `bucket list` は `<repo>\bucket` 配下しか
+# 数えず（lib/buckets.ps1）、リポジトリ直下に置くと Manifests 列が 0 と表示される。
+# さらに Find-BucketDirectory は `bucket/` が存在すればそこだけを見るため、
+# bucket リポジトリ内で直下と `bucket/` が混在すると直下側が無視される。
 scoops:
   - name: ssh-pushkey
+    directory: bucket
     homepage: https://github.com/kwrkb/ssh-pushkey
     description: An ssh-copy-id alternative for Windows OpenSSH servers
     license: MIT
