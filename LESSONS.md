@@ -1,5 +1,39 @@
 # LESSONS
 
+## Scoop の manifest は bucket リポジトリ直下ではなく `bucket/` に置く (2026-08-16)
+
+### 直下レイアウトは scoop から「見えていない」
+
+- `.goreleaser.yaml` の `scoops` は `directory` を指定せず、manifest を `kwrkb/scoop-bucket` の直下に
+  出力していた。同じ bucket へ 3 本目（rdp-host-info）を足すときに `scoop bucket list` を見て発覚した
+- **却下した案**: 直下レイアウトのまま維持する — `scoop install` / `scoop info` は直下でも動くので
+  実害は表示上だけに見えた。`Find-BucketDirectory`（`lib/buckets.ps1:23-25`）が `bucket/` の非存在時に
+  リポジトリルートへフォールバックするため
+- **決め手**: `scoop bucket list` の Manifests 列が kwrkb だけ **0**（main 1628 / extras 2366 /
+  java 336 は非0）だった。`lib/buckets.ps1:116` が `Get-ChildItem "$path\bucket"` しか数えないため。
+  加えて同ファイルの `apps_in_bucket` は `Get-ChildItem $dir -Filter '*.json' -Recurse` で、直下
+  レイアウトだとリポジトリ内の**無関係な JSON**（将来 `renovate.json` 等を置いた場合）まで
+  パッケージとして拾う。表示だけの問題ではない
+- `Find-BucketDirectory` は `bucket/` が存在すればそこ**だけ**を見る。つまり直下と `bucket/` は混在
+  できず、bucket リポジトリの `git mv` と publish 側 3 リポジトリ（ssh-pushkey / taskctl /
+  rdp-host-info）の設定変更を同時に入れる必要があった。本リポジトリの対応は `scoops.directory: bucket`
+  の 1 行。移行後 `scoop bucket list` が `kwrkb 3`、`scoop info ssh-pushkey` が 1.8.2 を解決すること
+  を確認した
+- **覆す条件**: scoop 本体が直下レイアウトも Manifests 列に数え、かつ `apps_in_bucket` の走査対象を
+  manifest 相当ファイルに限定するようになった場合
+
+### 自分が書いたコメントを、他プロジェクトが一次情報として複製する
+
+- 本リポジトリの `.goreleaser.yaml` には「directory は指定しない。サブディレクトリに置くと
+  `scoop bucket list` が 0 manifests と表示されるため、GoReleaser 公式もリポジトリ直下を推奨している」
+  というコメントが付いていた。**事実と逆**で、実測では直下の kwrkb が 0 manifests、`bucket/` を使う
+  公式バケットが正しく数えられていた
+- **決め手**: このコメントは taskctl と rdp-host-info の設定にもそのまま複製されており、誤った前提が
+  3 リポジトリへ伝播していた。ソース（`lib/buckets.ps1`）を読めば 5 分で否定できる内容だった
+- **ルール**: 外部ツールの挙動を根拠にコメントを書くときは、実装か実測のどちらかを併記する。逆に他
+  プロジェクトのコメントを設定の根拠にするときは、そこに実装・実測への参照が無ければ検証してから写す
+- **覆す条件**: なし
+
 ## 定期メンテナンス: stdlib 脆弱性は toolchain 行で追従する (2026-08-15)
 
 ### `go` ディレクティブは据え置き、`toolchain` 行だけを上げる
