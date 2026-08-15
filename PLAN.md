@@ -49,9 +49,13 @@ GitHub Releases（正本）+ `go install` に整理済み。その後段とし�
 - [x] `.goreleaser.yaml` を `winget:` から `scoops:` へ差し替え、`release.yml` のトークンを配線
 - [x] README / README_ja のインストール導線を Scoop に差し替え
 - [x] v1.8.1 で bucket に manifest が push されることを確認
-      （`kwrkb/scoop-bucket/ssh-pushkey.json`。hash がリリースの `checksums.txt` と
+      （`kwrkb/scoop-bucket` の `ssh-pushkey.json`。hash がリリースの `checksums.txt` と
       実ダウンロードの sha256 の両方に一致することも確認済み）
 - [x] README / README_ja の暫定注記を削除
+- [x] manifest の出力先を bucket リポジトリ直下から `bucket/` へ移動（2026-08-16、
+      `scoops.directory: bucket`）。scoop は `bucket/` が存在するとそこだけを見るため、
+      `kwrkb/scoop-bucket` と publish 側 3 リポジトリ（本リポジトリ / taskctl /
+      rdp-host-info）を同時に移行した。根拠は `LESSONS.md`
 
 不採用: WinGet（上記。誤検知が解消し、かつ再発しないと確認できたら再検討）、
 Homebrew（`brews:` は GoReleaser v2.16 で hard deprecation ＝ `goreleaser check` が失敗し
