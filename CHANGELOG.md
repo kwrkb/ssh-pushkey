@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- Updated dependencies: `golang.org/x/crypto` v0.54.0 → v0.55.0.
+- Added `toolchain go1.26.6` to `go.mod` so local and CI builds use Go 1.26.6, which fixes several standard-library vulnerabilities reported by `govulncheck` against 1.26.5 (`net/url`, `encoding/asn1`, `crypto/tls`, `net/http`, `encoding/xml`, `html/template`, `x/net/idna`). None were reachable from this tool's code. The `go 1.26.0` directive is unchanged, so `go install` on toolchains that cannot auto-download (e.g. Termux) keeps working.
+
 ## [1.8.1] - 2026-08-12
 
 ### Changed

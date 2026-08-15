@@ -1,5 +1,21 @@
 # LESSONS
 
+## 定期メンテナンス: stdlib 脆弱性は toolchain 行で追従する (2026-08-15)
+
+### `go` ディレクティブは据え置き、`toolchain` 行だけを上げる
+- `govulncheck` が stdlib 1.26.5 の脆弱性を複数報告した（いずれもこのツールからは到達不能）。修正は
+  Go 1.26.6 で、`go.mod` の何を上げるかが問題になった
+- **却下した案**: (A) `go 1.26.6` に上げる — 過去に Termux（toolchain の自動ダウンロード不可）で
+  `go install` が失敗し 1.26.0 まで下げた経緯がある（CHANGELOG 1.x）。(B) `go.mod` を触らず CI の
+  `setup-go` に版を直書き — ローカルと CI で版がずれ、`go.mod` を見ても実際のビルド版が分からない
+- **決め手**: `go get toolchain@go1.26.6` で `toolchain` 行を足した。`toolchain` 行は main module
+  としてビルドするとき（ローカル / CI）だけ効き、`go install pkg@version` の利用者には適用されない
+  ので Termux 互換を壊さない。ローカルは `GOTOOLCHAIN=auto` が 1.26.6 を自動取得し、`sudo` で
+  `/usr/local/go` を更新しなくても `make check` と `govulncheck` が新版で通った（`go version` が
+  モジュール内で go1.26.6 を返すことで確認）
+- **覆す条件**: `toolchain` 行の版が Termux 側にも強制される挙動が確認された場合、または `go` 行の
+  最小版を上げる別の理由（言語機能）が出た場合は `go` 行を上げて CHANGELOG に互換性影響を明記する
+
 ## Scoop 用 PAT を 1Password 管理へ移行 (2026-08-15)
 
 ### CI シークレットの「移行先」は vault 単位の到達範囲で選ぶ

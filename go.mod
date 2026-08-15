@@ -2,9 +2,11 @@ module github.com/kwrkb/ssh-pushkey
 
 go 1.26.0
 
+toolchain go1.26.6
+
 require (
 	github.com/kevinburke/ssh_config v1.6.0
-	golang.org/x/crypto v0.54.0
+	golang.org/x/crypto v0.55.0
 	golang.org/x/term v0.45.0
 )
 
