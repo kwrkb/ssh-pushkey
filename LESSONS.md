@@ -13,8 +13,12 @@
   ので Termux 互換を壊さない。ローカルは `GOTOOLCHAIN=auto` が 1.26.6 を自動取得し、`sudo` で
   `/usr/local/go` を更新しなくても `make check` と `govulncheck` が新版で通った（`go version` が
   モジュール内で go1.26.6 を返すことで確認）
-- **覆す条件**: `toolchain` 行の版が Termux 側にも強制される挙動が確認された場合、または `go` 行の
-  最小版を上げる別の理由（言語機能）が出た場合は `go` 行を上げて CHANGELOG に互換性影響を明記する
+- **実機確認（2026-08-15）**: Termux の go1.26.5 android/arm64（toolchain 行の 1.26.6 より古い）で
+  `gup update` 経由の `go install github.com/kwrkb/ssh-pushkey@latest` が v1.8.2 をダウンロードなしで
+  ビルドした。公式ドキュメント（go.dev/doc/toolchain）のとおり `go install pkg@version` は空の main
+  module で動き `go` 行しか見ないため、`toolchain` 行は波及しない
+- **覆す条件**: `go` 行の最小版を上げる別の理由（言語機能）が出た場合は `go` 行を上げて CHANGELOG に
+  互換性影響を明記する
 
 ## Scoop 用 PAT を 1Password 管理へ移行 (2026-08-15)
 
