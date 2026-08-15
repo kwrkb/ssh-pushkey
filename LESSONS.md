@@ -1,5 +1,42 @@
 # LESSONS
 
+## Scoop 用 PAT を 1Password 管理へ移行 (2026-08-15)
+
+### CI シークレットの「移行先」は vault 単位の到達範囲で選ぶ
+- 1Password サービスアカウントのアクセス権は **vault 単位**で付き、個々の item に絞れない。手元の
+  `Dev` vault を GitHub Actions 用 SA にそのまま与えると、Actions 環境が漏れた際の到達範囲が Scoop
+  PAT だけでなく `Dev` の全 item に広がる。実際、無関係な複数プロジェクトの本番シークレットが同居して
+  いた
+- **却下した案**: (A) `actions/create-github-app-token` — installation token は 1 時間で失効し
+  `scoop-bucket` にスコープできるため長期 PAT を完全に廃止できるが、SA と `gh` vault は作成済みで
+  PAT 格納済みだった。(B) 既存 `Dev` vault を GitHub 用 SA に付与 — 追加作業ゼロだが上記の到達範囲
+  問題がある。(C) `secrets.SCOOP_GITHUB_TOKEN` の行を残したまま 1Password 読み出しを併存 — step
+  レベルの `env:` が job env より優先されるため、GitHub 側の secret を削除した時点で空文字が渡り、
+  goreleaser の scoop push が認証エラーで落ちる
+- **決め手**: `gh` 専用 vault を切って Scoop PAT だけを入れ、GitHub 用 SA には read-only でその vault
+  のみ付与した。これで移行後に GitHub 側に残る長期シークレットは `OP_SERVICE_ACCOUNT_TOKEN` 1 つに
+  なる。**シークレットの数は減っていない**（1 個が 1 個に置き換わっただけ）。得られるのはローテーション
+  の一元化と 1Password 側の監査ログで、そこを理由に採る限り妥当
+- **覆す条件**: SA トークンの失効でリリースが黙って壊れた場合、または GitHub 側に長期シークレットを
+  一切置かない要件が出た場合は GitHub App 方式（案 A）へ移す
+
+### `skip_upload: auto` のせいでプレリリースタグは検証にならない
+- 配布チャネルのトークンを差し替えたら普通はプレリリースタグで試したくなるが、`.goreleaser.yaml` の
+  `scoops.skip_upload: auto` はプレリリース時に bucket アップロードごとスキップする。`v*-rc1` を打っても
+  **ジョブは緑になるがトークンを一切試していない**。release.yml のコメントが警告している「リリースは
+  公開済みだが bucket 未更新」という半端な状態を、本番タグで初めて踏むことになる
+- **決め手**: ブランチ限定（`on: push: branches: [...]`）の一時ジョブ `op-check.yml` を置き、1Password
+  から PAT を読んで `gh api repos/kwrkb/scoop-bucket -q .permissions.push` を確認する方式で検証した。
+  run 31868231450 で `push permission: true` を得てからファイルを削除している。本番リリースを 1 回も
+  消費せずに「op 参照が解決するか」「SA が vault に届くか」「PAT に push 権限があるか」を分離して潰せる
+- **ルール**: fine-grained PAT が対象リポジトリをリソースに含まない場合、GitHub API は 403 ではなく
+  **404** を返す。権限確認では API 呼び出しの成否を見ず、`permissions.push` の値を明示的に判定する
+- 併せて `gh api repos/kwrkb/scoop-bucket/branches/main -q .protected` が `false` であることも確認した。
+  collaborator 権限があっても branch protection があれば goreleaser の直接 push は弾かれるため、
+  push 権限の確認だけでは経路が通る保証にならない
+- **覆す条件**: `skip_upload` を外してプレリリースでも bucket を更新する運用に変えたら、プレリリース
+  タグ自体が経路の検証になるため一時ジョブは不要になる
+
 ## WinGet から Scoop へ切替: Defender 誤検知 (2026-08-12)
 
 **「WinGet 採用」の結論を差し替える。** 覆す条件として書いた「WinGet の PR が未署名バイナリ等で
