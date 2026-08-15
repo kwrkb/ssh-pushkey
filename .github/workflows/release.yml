@@ -31,15 +31,27 @@ jobs:
             echo "Release ${GITHUB_REF_NAME}" > /tmp/release-notes.md
           fi
 
+      # Scoop の manifest は別リポジトリ kwrkb/scoop-bucket へ push するため、
+      # 当該リポジトリにしか権限が無い既定の GITHUB_TOKEN では届かない。専用の PAT が要る。
+      # その PAT は GitHub Secrets ではなく 1Password の `gh` vault で管理し、ここで読み出す。
+      # GitHub 側に置く長期シークレットは 1Password サービスアカウントのトークン 1 つだけになる。
+      #
+      # export-env は既定 false（v5）。環境変数にばら撒かず outputs 経由で
+      # goreleaser ステップにだけ渡す。
+      - name: Load Scoop PAT from 1Password
+        id: op
+        uses: 1password/load-secrets-action@v5
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          SCOOP_GITHUB_TOKEN: op://gh/SCOOP_GITHUB_TOKEN/credential
+
       - uses: goreleaser/goreleaser-action@v7
         with:
           version: "~> v2"
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Scoop の manifest は別リポジトリ kwrkb/scoop-bucket へ push するため、
-          # 当該リポジトリにしか権限が無い既定の GITHUB_TOKEN では届かない。
-          SCOOP_GITHUB_TOKEN: ${{ secrets.SCOOP_GITHUB_TOKEN }}
+          SCOOP_GITHUB_TOKEN: ${{ steps.op.outputs.SCOOP_GITHUB_TOKEN }}
 
       # GoReleaser の `--release-notes` は changelog パイプ内で読み込まれるため、
       # .goreleaser.yaml の `changelog.disable: true` でパイプごとスキップされ無視される。
