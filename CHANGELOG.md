@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.8.2] - 2026-08-15
+
 ### Changed
 
 - Updated dependencies: `golang.org/x/crypto` v0.54.0 → v0.55.0.
@@ -194,7 +196,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Duplicate key detection
 - PowerShell remote execution via `-EncodedCommand` (UTF-16LE Base64)
 
-[Unreleased]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.8.1...HEAD
+[Unreleased]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.8.2...HEAD
+[1.8.2]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.8.1...v1.8.2
 [1.8.1]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.8.0...v1.8.1
 [1.8.0]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.7.3...v1.8.0
 [1.7.3]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.7.2...v1.7.3
