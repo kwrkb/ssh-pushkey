@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- Updated dependencies: `golang.org/x/crypto` v0.55.0 → v0.56.0. Versions up to v0.55.0 are affected by GO-2026-6354 and GO-2026-6355, two denial-of-service issues in `golang.org/x/crypto/ssh` channel handling that `govulncheck` reports as reachable from this tool's `ssh.Dial` call. After the update `govulncheck ./...` reports no reachable vulnerabilities.
+
 ## [1.8.2] - 2026-08-15
 
 ### Changed

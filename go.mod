@@ -6,7 +6,7 @@ toolchain go1.26.6
 
 require (
 	github.com/kevinburke/ssh_config v1.6.0
-	golang.org/x/crypto v0.55.0
+	golang.org/x/crypto v0.56.0
 	golang.org/x/term v0.45.0
 )
 
