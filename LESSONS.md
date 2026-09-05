@@ -471,3 +471,11 @@
 #### 実機検証で確認できたこと / できなかったこと
 - 確認済み（loopback 実機 127.0.0.1）: SSH_CONNECTION は EncodedCommand セッションで populate される / CLIXML 混入下でも実スペックを抽出できる / 実機 sshd が `laddr`/`lport` 込みスペックを exit 0 で受理する（フォールバックに落ちない）。
 - 未確認（loopback では不可能）: `Match Address`/`Match Host` ルール下での誤判定の実際の解消。loopback クライアントでは新スペックの `addr=127.0.0.1` が旧固定値と機能的に同一のため、本来のバグシナリオは exercise されない。修正は correct-by-construction。非 loopback クライアントでの検証は今後の課題。
+
+---
+
+## 2026-09-06: 作業クローンの remote が GitLab 単一に退化しており、GitHub master が 3 コミット先行していた
+
+- 却下した案: (A) remote 構成をそのままにし、GitLab を指す `origin` に対して依存更新のブランチを push する。(B) GitHub remote を追加するだけに留め、master の fast-forward と GitLab への push は保留する。
+- 決め手: `git remote -v` の出力が `origin git@gitlab.com:kwrkb/ssh-pushkey.git` の 1 件のみで、GitHub remote が存在しなかった。`gh api` で取得した GitHub の master は `6a567fb`、ローカルと `gitlab/master` は `8b91f5f`（乖離ではなく fast-forward 可能）。先行分 3 件には `574daf5 fix: write the Scoop manifest into bucket/` が含まれ、これは Scoop manifest の出力先修正。PLAN.md は GitHub Releases を配布の正本、Scoop manifest はそこから GoReleaser が生成すると定めているため、(A) のまま `v*` タグを push すると GitLab の release ジョブだけが走り、正本のリリースと bucket 更新が沈黙して欠落する。(B) では GitLab が 3 コミット遅れたままになり、次回 master push で非 fast-forward reject を招く。よって `origin` を `gitlab` にリネーム → `origin`=GitHub を追加 → master を `6a567fb` へ fast-forward → GitLab にも push、で 3 者を揃えた。CI・GoReleaser・Makefile は `origin` を参照していないことを grep で確認済み（参照は `.claude/CLAUDE.md` の記述のみ）。
+- 覆す条件: 配布の正本が GitHub Releases でなくなる、または Scoop bucket の manifest 生成が GitHub リリースに依存しなくなった場合。その時は remote の主従を再定義してよい。
