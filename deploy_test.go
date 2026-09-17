@@ -494,6 +494,11 @@ func TestLooksLikeNonWindows(t *testing.T) {
 		{"normal windows output — True", "True", false},
 		{"empty output", "", false},
 		{"windows error message", "The system cannot find the file specified.", false},
+		// シェル名の判定は行頭一致。"ssh:" や "…finish:" は "sh:" を含むが非 Windows ではない。
+		{"ssh error is not a shell prefix", "ssh: handshake failed: host key verification failed", false},
+		{"word ending in sh followed by colon", "Publish:  failed to upload the artifact", false},
+		{"shell prefix mid-line is ignored", "Wrote log to C:\\tmp\\bash: notes.txt", false},
+		{"shell prefix on a later line", "#< CLIXML\nksh: powershell: cannot execute", true},
 	}
 
 	for _, c := range cases {

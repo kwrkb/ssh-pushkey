@@ -186,22 +186,43 @@ func effectiveAdminKeysFromSshdT(output string) (isAdmin bool, ok bool) {
 	return false, false
 }
 
+// nonWindowsMessageSignatures は「非 Windows ホスト」を示すメッセージ断片。
+// いずれも十分に特徴的なので出力のどこに出ても判定に使える。
+var nonWindowsMessageSignatures = []string{
+	"command not found",
+	"not recognized as",
+	"unknown command",
+	"no such file or directory",
+	"not supported on this platform",
+	"platformnotsupported",
+}
+
+// nonWindowsShellPrefixes は Unix シェルがコマンド不在を報告するときの行頭。
+// これらは**行頭一致**でしか見ない。部分一致にすると "ssh:" や "…finish:" のような
+// 無関係な文字列が "sh:" を含むだけで非 Windows と誤判定され、graceful degradation では
+// なく「Windows ではない」と即座に中断してしまう（markerValue / hasMarkerLine と同じ方針）。
+// `env:` は入れない。PowerShell 自身の `$env:VAR` 名前空間と衝突し、
+// `Write-Output $env:SSH_CONNECTION` を含むこのツールの出力を非 Windows と誤判定し得る。
+// `env: 'powershell': No such file or directory` は message 側の断片で拾える。
+var nonWindowsShellPrefixes = []string{
+	"bash:", "sh:", "zsh:", "ksh:", "csh:", "tcsh:", "dash:", "ash:", "fish:",
+	"powershell:",
+}
+
 // looksLikeNonWindows は PowerShell 実行エラー出力が Linux/非 Windows ホストを示すか判定する。
 func looksLikeNonWindows(output string) bool {
 	lower := strings.ToLower(output)
-	for _, sig := range []string{
-		"command not found",
-		"not recognized as",
-		"powershell: not found",
-		"bash:",
-		"sh:",
-		"unknown command",
-		"no such file or directory",
-		"not supported on this platform",
-		"platformnotsupported",
-	} {
+	for _, sig := range nonWindowsMessageSignatures {
 		if strings.Contains(lower, sig) {
 			return true
+		}
+	}
+	for _, line := range strings.Split(lower, "\n") {
+		trimmed := strings.TrimSpace(line)
+		for _, prefix := range nonWindowsShellPrefixes {
+			if strings.HasPrefix(trimmed, prefix) {
+				return true
+			}
 		}
 	}
 	return false

@@ -199,3 +199,123 @@ func TestAtomicWriteFile_CreatesAndOverwrites(t *testing.T) {
 		t.Errorf("expected only known_hosts to remain, got %v", names)
 	}
 }
+
+func TestHostPatternMatch(t *testing.T) {
+	tests := []struct {
+		pattern string
+		addr    string
+		want    bool
+	}{
+		{"example.com", "example.com", true},
+		{"example.com", "other.com", false},
+		{"*", "anything", true},
+		{"*.example.com", "win.example.com", true},
+		{"*.example.com", "example.com", false},
+		{"192.168.1.*", "192.168.1.10", true},
+		{"192.168.1.*", "192.168.2.10", false},
+		{"192.168.?.10", "192.168.1.10", true},
+		{"192.168.?.10", "192.168.10.10", false},
+		{"[192.168.1.*]:2222", "[192.168.1.10]:2222", true},
+		{"[192.168.1.*]:2222", "[192.168.1.10]:22", false},
+		{"a*b*c", "axxbyyc", true},
+		{"a*b*c", "axxbyy", false},
+		{"", "", true},
+		{"", "x", false},
+		{"*", "", true},
+	}
+	for _, tt := range tests {
+		if got := hostPatternMatch(tt.pattern, tt.addr); got != tt.want {
+			t.Errorf("hostPatternMatch(%q, %q) = %v, want %v", tt.pattern, tt.addr, got, tt.want)
+		}
+	}
+}
+
+func TestKnownHostsLineMatchesAddr(t *testing.T) {
+	hashed := knownhosts.HashHostname("secret.example.com")
+	tests := []struct {
+		name      string
+		hostField string
+		addr      string
+		want      bool
+	}{
+		{"exact", "example.com", "example.com", true},
+		{"wildcard", "192.168.1.*", "192.168.1.10", true},
+		{"wildcard no match", "192.168.1.*", "10.0.0.1", false},
+		{"comma list", "a.example.com,192.168.1.*", "192.168.1.10", true},
+		{"negation vetoes wildcard", "192.168.1.*,!192.168.1.10", "192.168.1.10", false},
+		{"negation before positive still vetoes", "!192.168.1.10,192.168.1.*", "192.168.1.10", false},
+		{"negation of other host", "192.168.1.*,!192.168.1.11", "192.168.1.10", true},
+		{"hashed", hashed, "secret.example.com", true},
+		{"hashed other addr", hashed, "other.example.com", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := knownHostsLineMatchesAddr(tt.hostField, tt.addr); got != tt.want {
+				t.Errorf("knownHostsLineMatchesAddr(%q, %q) = %v, want %v", tt.hostField, tt.addr, got, tt.want)
+			}
+		})
+	}
+}
+
+// TestHostMatchesAddr_IgnoresWildcards は削除経路（replaceHostKeyInKnownHosts）が使う
+// hostMatchesAddr がワイルドカードを展開しないことを固定する。展開してしまうと
+// `192.168.1.*` の 1 行を消したときに他ホストの鍵も巻き添えで消える。
+func TestHostMatchesAddr_IgnoresWildcards(t *testing.T) {
+	if hostMatchesAddr("192.168.1.*", "192.168.1.10") {
+		t.Error("hostMatchesAddr must not expand wildcards (deletion path would remove other hosts)")
+	}
+}
+
+func TestHostKeyAlgorithmsFromKnownHosts(t *testing.T) {
+	const (
+		rsaKey = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDdummy"
+		edKey  = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIdummy"
+	)
+	write := func(t *testing.T, content string) string {
+		t.Helper()
+		path := filepath.Join(t.TempDir(), "known_hosts")
+		if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+			t.Fatalf("write known_hosts: %v", err)
+		}
+		return path
+	}
+
+	t.Run("wildcard entry is honored", func(t *testing.T) {
+		path := write(t, "192.168.1.* "+edKey+"\n")
+		got := hostKeyAlgorithmsFromKnownHosts(path, "192.168.1.10")
+		if len(got) != 1 || got[0] != "ssh-ed25519" {
+			t.Errorf("got %v, want [ssh-ed25519]", got)
+		}
+	})
+
+	t.Run("wildcard and exact entries are combined", func(t *testing.T) {
+		path := write(t, "192.168.1.* "+edKey+"\n192.168.1.10 "+rsaKey+"\n")
+		got := hostKeyAlgorithmsFromKnownHosts(path, "192.168.1.10")
+		if len(got) != 2 || got[0] != "ssh-ed25519" || got[1] != "ssh-rsa" {
+			t.Errorf("got %v, want [ssh-ed25519 ssh-rsa]", got)
+		}
+	})
+
+	t.Run("negated host is excluded", func(t *testing.T) {
+		path := write(t, "192.168.1.*,!192.168.1.10 "+edKey+"\n")
+		if got := hostKeyAlgorithmsFromKnownHosts(path, "192.168.1.10"); got != nil {
+			t.Errorf("got %v, want nil", got)
+		}
+	})
+
+	t.Run("marker lines are skipped", func(t *testing.T) {
+		// @cert-authority が持つのは CA 鍵の種別。制限リストに混ぜると証明書ホストを壊すため、
+		// マーカー行しか無いホストは nil（＝制限なし）にフォールバックする。
+		path := write(t, "@cert-authority *.example.com "+rsaKey+"\n@revoked win.example.com "+edKey+"\n")
+		if got := hostKeyAlgorithmsFromKnownHosts(path, "win.example.com"); got != nil {
+			t.Errorf("got %v, want nil", got)
+		}
+	})
+
+	t.Run("unknown host yields nil", func(t *testing.T) {
+		path := write(t, "10.0.0.1 "+edKey+"\n")
+		if got := hostKeyAlgorithmsFromKnownHosts(path, "192.168.1.10"); got != nil {
+			t.Errorf("got %v, want nil", got)
+		}
+	})
+}

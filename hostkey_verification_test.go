@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/rsa"
 	"encoding/base64"
 	"fmt"
 	"net"
@@ -46,10 +47,27 @@ func generateHostKey(t *testing.T) ssh.Signer {
 	return signer
 }
 
+// generateRSAHostKey はテスト用の RSA ホスト鍵を生成する。
+// 実機の Windows OpenSSH は rsa / ecdsa / ed25519 を同時に提供するため、
+// 「サーバが複数種別を出す」状況を再現するのに使う。
+func generateRSAHostKey(t *testing.T) ssh.Signer {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generate rsa key: %v", err)
+	}
+	signer, err := ssh.NewSignerFromKey(key)
+	if err != nil {
+		t.Fatalf("new signer: %v", err)
+	}
+	return signer
+}
+
 // startTestSSHServer は 127.0.0.1 上に password 認証のみの SSH サーバを起動し、ポートを返す。
 // dialSSH はハンドシェイク＋認証完了で *ssh.Client を返す（チャネルは開かない）ため、
 // チャネル要求は拒否で十分。リスナーは t.Cleanup でクローズする。
-func startTestSSHServer(t *testing.T, hostKey ssh.Signer) int {
+// ホスト鍵は可変長で受け取り、複数渡すと実機同様に複数種別を提供するサーバになる。
+func startTestSSHServer(t *testing.T, hostKeys ...ssh.Signer) int {
 	t.Helper()
 
 	config := &ssh.ServerConfig{
@@ -60,7 +78,9 @@ func startTestSSHServer(t *testing.T, hostKey ssh.Signer) int {
 			return nil, fmt.Errorf("authentication failed")
 		},
 	}
-	config.AddHostKey(hostKey)
+	for _, hostKey := range hostKeys {
+		config.AddHostKey(hostKey)
+	}
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -356,5 +376,102 @@ func TestHostKeyVerification_HashKnownHosts_AppendsHashed(t *testing.T) {
 	}
 	if !strings.HasPrefix(strings.TrimSpace(appended), "|1|") {
 		t.Errorf("new entry must be hashed when known_hosts already has hashed entries, got: %q", appended)
+	}
+}
+
+// TestHostKeyVerification_WildcardKnownHosts_NoFalseMitm は、known_hosts のホスト行が
+// ワイルドカードパターン（例: `192.168.1.*`）の場合でもホスト鍵アルゴリズムの制限が効き、
+// 「変わっていないホスト」に対して REMOTE HOST IDENTIFICATION HAS CHANGED の
+// 誤警告が出ないことを検証する。
+//
+// 回帰の中身: hostKeyAlgorithmsFromKnownHosts がホスト行を完全一致でしか見ていなかった頃、
+// パターン行は「未登録」と判定されて制限が nil になっていた。一方 knownhosts コールバックは
+// パターンを解釈するため、サーバが複数種別のホスト鍵を持つと Go が known_hosts に無い種別
+// （ここでは rsa）をネゴシエートし、コールバックが「登録済みの鍵と違う」＝鍵変更として
+// KeyError.Want 付きで弾く。結果、正常なホストで MITM 警告とプロンプトが出ていた。
+func TestHostKeyVerification_WildcardKnownHosts_NoFalseMitm(t *testing.T) {
+	edKey := generateHostKey(t)
+	rsaKey := generateRSAHostKey(t)
+	// 実機同様、サーバは rsa と ed25519 の両方を提供する
+	port := startTestSSHServer(t, rsaKey, edKey)
+
+	knownHostsPath := tempHome(t)
+	if err := os.MkdirAll(filepath.Dir(knownHostsPath), 0700); err != nil {
+		t.Fatalf("mkdir .ssh: %v", err)
+	}
+	// known_hosts にはワイルドカードで ed25519 鍵だけが登録されている
+	pattern := fmt.Sprintf("[127.0.0.*]:%d", port)
+	line := knownhosts.Line([]string{pattern}, edKey.PublicKey()) + "\n"
+	if err := os.WriteFile(knownHostsPath, []byte(line), 0600); err != nil {
+		t.Fatalf("seed known_hosts: %v", err)
+	}
+
+	failIfPrompted(t)
+
+	client, err := dialSSH(testSSHUser, "127.0.0.1", port, testSSHPassword, false)
+	if err != nil {
+		t.Fatalf("dialSSH with wildcard known_hosts entry failed: %v", err)
+	}
+	defer client.Close()
+
+	// known_hosts は書き換えられていないこと（誤検知で行が消えたり増えたりしない）
+	after, err := os.ReadFile(knownHostsPath)
+	if err != nil {
+		t.Fatalf("read known_hosts: %v", err)
+	}
+	if string(after) != line {
+		t.Errorf("known_hosts was modified\n got: %q\nwant: %q", string(after), line)
+	}
+}
+
+// TestHostKeyVerification_WildcardAlgorithmMismatch_RetriesAndPrompts は、ワイルドカード行から
+// 取り出したアルゴリズムがサーバの実際のホスト鍵種別と合わない場合に、dialSSH が制限を外して
+// 再試行し、対話プロンプトまで到達することを検証する。
+//
+// 照合をワイルドカード対応にしたことで、以前は nil（＝制限なし）だったケースに制限が付く。
+// known_hosts のパターン行が実サーバと別種別の鍵を指していると
+// "no common algorithm for host key" でハンドシェイクが落ちるため、
+// shouldRetryWithoutHostKeyAlgorithms による再試行が効かないと、それまで
+// プロンプトで回復できていた構成がハードエラーに変わってしまう。
+// 併せて shouldRetryWithoutHostKeyAlgorithms の文字列判定が、現行の x/crypto が返す
+// 実エラーに対して機能していることも確認する（予測文字列ではなく実ハンドシェイク由来）。
+func TestHostKeyVerification_WildcardAlgorithmMismatch_RetriesAndPrompts(t *testing.T) {
+	rsaKey := generateRSAHostKey(t)
+	// サーバは rsa のみを提供する
+	port := startTestSSHServer(t, rsaKey)
+
+	knownHostsPath := tempHome(t)
+	if err := os.MkdirAll(filepath.Dir(knownHostsPath), 0700); err != nil {
+		t.Fatalf("mkdir .ssh: %v", err)
+	}
+	// known_hosts のワイルドカード行は ed25519 鍵を指しており、サーバとは種別が食い違う
+	pattern := fmt.Sprintf("[127.0.0.*]:%d", port)
+	wildcardLine := knownhosts.Line([]string{pattern}, generateHostKey(t).PublicKey()) + "\n"
+	if err := os.WriteFile(knownHostsPath, []byte(wildcardLine), 0600); err != nil {
+		t.Fatalf("seed known_hosts: %v", err)
+	}
+
+	promptCount := overridePrompt(t, "yes")
+
+	client, err := dialSSH(testSSHUser, "127.0.0.1", port, testSSHPassword, false)
+	if err != nil {
+		t.Fatalf("dialSSH should have retried without the host key algorithm restriction: %v", err)
+	}
+	defer client.Close()
+
+	if *promptCount != 1 {
+		t.Errorf("prompt count = %d, want 1 (retry must reach the interactive callback)", *promptCount)
+	}
+
+	// 承認後: ワイルドカード行は残ったまま（削除経路は完全一致のみ）、実鍵が追記されている。
+	after, err := os.ReadFile(knownHostsPath)
+	if err != nil {
+		t.Fatalf("read known_hosts: %v", err)
+	}
+	if !strings.Contains(string(after), strings.TrimSpace(wildcardLine)) {
+		t.Errorf("wildcard line must not be deleted (it may cover other hosts)\ngot: %q", string(after))
+	}
+	if !strings.Contains(string(after), keyB64(rsaKey.PublicKey())) {
+		t.Errorf("accepted host key was not appended\ngot: %q", string(after))
 	}
 }

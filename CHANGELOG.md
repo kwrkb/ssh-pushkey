@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Host key verification no longer prints a false `REMOTE HOST IDENTIFICATION HAS CHANGED!` warning when `~/.ssh/known_hosts` matches the target through a wildcard pattern (`192.168.1.*`, `*.example.com`, …). The host key algorithms offered during negotiation are taken from `known_hosts`, but that lookup compared host fields for exact equality only, so a pattern entry was treated as "host unknown" and no restriction was applied. Against a server offering several host key types — which Windows OpenSSH does (rsa, ecdsa, ed25519) — the client could then negotiate a type absent from `known_hosts`, and the verification callback, which *does* expand patterns, reported it as a changed host key. Host matching for this lookup now follows OpenSSH: `*` and `?` wildcards, comma-separated lists, and `!` negation. `@cert-authority` and `@revoked` lines are skipped, because the algorithm on a `@cert-authority` line belongs to the CA key rather than the host key. Removal of stale entries deliberately keeps matching on exact equality, so accepting a changed host key never deletes a pattern line covering other hosts.
+- The "remote host is not Windows" check no longer aborts on unrelated output. Unix shell prefixes (`bash:`, `sh:`, …) were matched as substrings anywhere in the remote output, so text such as `ssh: …` or `Publish: …` — both of which contain `sh:` — made the tool exit with "remote host does not appear to be Windows". Those prefixes are now anchored to the start of a line, matching the convention already used for the result markers.
+
 ### Changed
 
 - Updated dependencies: `golang.org/x/crypto` v0.55.0 → v0.56.0. Versions up to v0.55.0 are affected by GO-2026-6354 and GO-2026-6355, two denial-of-service issues in `golang.org/x/crypto/ssh` channel handling that `govulncheck` reports as reachable from this tool's `ssh.Dial` call. After the update `govulncheck ./...` reports no reachable vulnerabilities.
