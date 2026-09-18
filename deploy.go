@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"net"
+	"path"
 	"strconv"
 	"strings"
 
@@ -186,21 +187,66 @@ func effectiveAdminKeysFromSshdT(output string) (isAdmin bool, ok bool) {
 	return false, false
 }
 
+// nonWindowsMessageSignatures は「非 Windows ホスト」を示すメッセージ断片。
+// いずれも十分に特徴的なので出力のどこに出ても判定に使える。
+var nonWindowsMessageSignatures = []string{
+	"command not found",
+	"not recognized as",
+	"unknown command",
+	"no such file or directory",
+	"not supported on this platform",
+	"platformnotsupported",
+}
+
+// nonWindowsShellPrefixes は Unix シェルがコマンド不在を報告するときの行頭。
+// これらは**行頭一致**、または行頭が `/` の場合にかぎり**絶対パスの basename 一致**
+// でしか見ない。無条件の部分一致にすると "ssh:" や "…finish:" のような
+// 無関係な文字列が "sh:" を含むだけで非 Windows と誤判定され、graceful degradation では
+// なく「Windows ではない」と即座に中断してしまう（markerValue / hasMarkerLine と同じ方針）。
+// `env:` は入れない。PowerShell 自身の `$env:VAR` 名前空間と衝突し、
+// `Write-Output $env:SSH_CONNECTION` を含むこのツールの出力を非 Windows と誤判定し得る。
+// `env: 'powershell': No such file or directory` は message 側の断片で拾える。
+var nonWindowsShellPrefixes = []string{
+	"bash:", "sh:", "zsh:", "ksh:", "csh:", "tcsh:", "dash:", "ash:", "fish:",
+	"powershell:",
+}
+
+// hasNonWindowsShellPrefix は小文字化済みの 1 行が Unix シェルの自己申告で始まるか判定する。
+// シェルは自分の名前（`sh:`）でも絶対パス（`/bin/sh: 1: powershell: not found`）でも
+// 名乗るため、行頭が `/` のときにかぎり最初の `:` までを basename に落として照合する。
+// `/` 始まりに限定しているのは "ssh: handshake failed" のような行を巻き込まないため。
+func hasNonWindowsShellPrefix(line string) bool {
+	for _, prefix := range nonWindowsShellPrefixes {
+		if strings.HasPrefix(line, prefix) {
+			return true
+		}
+	}
+	if !strings.HasPrefix(line, "/") {
+		return false
+	}
+	colon := strings.Index(line, ":")
+	if colon <= 0 {
+		return false
+	}
+	base := path.Base(line[:colon]) + ":"
+	for _, prefix := range nonWindowsShellPrefixes {
+		if base == prefix {
+			return true
+		}
+	}
+	return false
+}
+
 // looksLikeNonWindows は PowerShell 実行エラー出力が Linux/非 Windows ホストを示すか判定する。
 func looksLikeNonWindows(output string) bool {
 	lower := strings.ToLower(output)
-	for _, sig := range []string{
-		"command not found",
-		"not recognized as",
-		"powershell: not found",
-		"bash:",
-		"sh:",
-		"unknown command",
-		"no such file or directory",
-		"not supported on this platform",
-		"platformnotsupported",
-	} {
+	for _, sig := range nonWindowsMessageSignatures {
 		if strings.Contains(lower, sig) {
+			return true
+		}
+	}
+	for _, line := range strings.Split(lower, "\n") {
+		if hasNonWindowsShellPrefix(strings.TrimSpace(line)) {
 			return true
 		}
 	}

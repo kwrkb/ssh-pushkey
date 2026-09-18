@@ -494,6 +494,17 @@ func TestLooksLikeNonWindows(t *testing.T) {
 		{"normal windows output — True", "True", false},
 		{"empty output", "", false},
 		{"windows error message", "The system cannot find the file specified.", false},
+		// シェル名の判定は行頭一致。"ssh:" や "…finish:" は "sh:" を含むが非 Windows ではない。
+		{"ssh error is not a shell prefix", "ssh: handshake failed: host key verification failed", false},
+		{"word ending in sh followed by colon", "Publish:  failed to upload the artifact", false},
+		{"shell prefix mid-line is ignored", "Wrote log to C:\\tmp\\bash: notes.txt", false},
+		{"shell prefix on a later line", "#< CLIXML\nksh: powershell: cannot execute", true},
+		// 絶対パスで名乗るシェル。dash の "not found" は message 断片に一致しないため、
+		// basename 一致が無いと Windows 扱いのまま配置経路へ進んでしまう。
+		{"absolute path dash", "/bin/sh: 1: powershell: not found", true},
+		{"absolute path bash", "/usr/bin/bash: powershell: No such file", true},
+		{"absolute path non-shell binary", "/usr/bin/git: 'foo' is not a git command", false},
+		{"absolute path without colon", "/bin/sh is a shell", false},
 	}
 
 	for _, c := range cases {

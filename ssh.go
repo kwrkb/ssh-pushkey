@@ -216,7 +216,18 @@ func matchHashedHost(pattern, addr string) bool {
 }
 
 // hostMatchesAddr はknown_hostsのホストフィールド（plain-textまたはハッシュ形式）が
-// 指定アドレスにマッチするかを判定する。
+// 指定アドレスに**完全一致**するかを判定する。
+//
+// ワイルドカードは意図的に解釈しない。この関数の利用者は
+// replaceHostKeyInKnownHosts（＝マッチした行を known_hosts から削除する経路）であり、
+// ここでパターンを展開すると `192.168.1.*` のような 1 行が他ホストの鍵も巻き添えに消える。
+// 読み取り専用の照合（hostKeyAlgorithmsFromKnownHosts）は
+// knownHostsLineMatchesAddr を使い、OpenSSH と同じパターン解釈を行う。
+//
+// 大文字小文字も畳まない（hostPatternMatch とは非対称）。この関数が走るのは
+// x/crypto/ssh/knownhosts のコールバックが「鍵が変わった」と判定した後だけで、
+// そのコールバック自身がバイト完全一致（同パッケージに大小文字を畳む処理は無い）。
+// ここだけ広げると、コールバックが一致させていない行まで削除対象になる。
 func hostMatchesAddr(host, addr string) bool {
 	if strings.HasPrefix(host, "|") {
 		return matchHashedHost(host, addr)
@@ -224,8 +235,95 @@ func hostMatchesAddr(host, addr string) bool {
 	return host == addr
 }
 
+// lowerASCII は ASCII 大文字 1 バイトを小文字に畳む。
+// known_hosts のホストフィールドは ASCII（ホスト名 / IP / `[addr]:port`）なので
+// Unicode 対応（strings.EqualFold）は不要で、バイト単位で足りる。
+func lowerASCII(b byte) byte {
+	if 'A' <= b && b <= 'Z' {
+		return b + ('a' - 'A')
+	}
+	return b
+}
+
+// hostPatternMatch は OpenSSH の known_hosts ホストパターン（`*` = 0 文字以上、
+// `?` = 任意の 1 文字）が addr にマッチするかを判定する。
+// known_hosts のホストフィールドは ASCII（ホスト名 / IP / `[addr]:port`）なので
+// バイト単位で比較する。バックトラックは `*` の位置を 1 つ覚えるだけの線形スキャンで足りる。
+//
+// 比較は**大文字小文字を区別しない**。OpenSSH の match_hostname() はホスト名と
+// パターンの両方を lowercase してから照合するため、区別するとパターン行が
+// 取りこぼされる（`*.Example.COM` が win.example.com に当たらない）か、
+// 否定が効かなくなる（`!WIN.example.com` が win.example.com を除外できない）。
+// どちらもこの関数が解決しようとしているワイルドカード誤警告をそのまま残してしまう。
+func hostPatternMatch(pattern, addr string) bool {
+	pi, ai := 0, 0
+	star, starMatch := -1, 0
+	for ai < len(addr) {
+		switch {
+		case pi < len(pattern) && (pattern[pi] == '?' || lowerASCII(pattern[pi]) == lowerASCII(addr[ai])):
+			pi++
+			ai++
+		case pi < len(pattern) && pattern[pi] == '*':
+			star, starMatch = pi, ai
+			pi++
+		case star >= 0:
+			// 直前の `*` に 1 文字余計に食わせてやり直す
+			starMatch++
+			pi, ai = star+1, starMatch
+		default:
+			return false
+		}
+	}
+	for pi < len(pattern) && pattern[pi] == '*' {
+		pi++
+	}
+	return pi == len(pattern)
+}
+
+// knownHostsLineMatchesAddr は known_hosts 行のホストフィールド（カンマ区切り）が
+// addr に適用されるかを OpenSSH と同じ規則で判定する。
+//   - ハッシュ化エントリ（|1|salt|hash）は HMAC で照合する（ワイルドカードは持てない）
+//   - plain-text エントリは `*` / `?` のワイルドカードを解釈する
+//   - `!pattern` の否定が 1 つでもマッチしたら、その行は addr に適用されない
+//     （順序に関係なく否定が勝つため、肯定一致で早期 return してはならない）
+func knownHostsLineMatchesAddr(hostField, addr string) bool {
+	matched := false
+	for _, h := range strings.Split(hostField, ",") {
+		h = strings.TrimSpace(h)
+		if h == "" {
+			continue
+		}
+		if negated, ok := strings.CutPrefix(h, "!"); ok {
+			if hostPatternMatch(negated, addr) {
+				return false
+			}
+			continue
+		}
+		if strings.HasPrefix(h, "|") {
+			if matchHashedHost(h, addr) {
+				matched = true
+			}
+			continue
+		}
+		if hostPatternMatch(h, addr) {
+			matched = true
+		}
+	}
+	return matched
+}
+
 // hostKeyAlgorithmsFromKnownHosts はknown_hostsファイルから対象ホストの鍵アルゴリズム一覧を返す。
 // ホストが未登録の場合はnilを返し、SSHクライアントのデフォルト動作に委ねる。
+//
+// ホスト照合は knownHostsLineMatchesAddr（OpenSSH 準拠のワイルドカード＋否定）で行う。
+// 完全一致だけで見ていると `192.168.1.*` のようなパターン行が「未登録」と判定され、
+// 制限なしでネゴシエーションした結果 known_hosts に載っていない種別の鍵が選ばれ、
+// 実際には何も変わっていないホストに対して「HOST IDENTIFICATION HAS CHANGED」を
+// 誤表示する（knownhosts コールバック側はパターンを解釈するため食い違う）。
+//
+// `@cert-authority` / `@revoked` のマーカー行は対象外にする。前者が持つのは CA 鍵の種別で
+// あってホスト鍵の種別ではなく、これを制限リストに混ぜると証明書ホストへの接続を壊す。
+// マーカー行しか無いホストでは nil（＝制限なし）を返すのが安全側。
 func hostKeyAlgorithmsFromKnownHosts(knownHostsPath string, addr string) []string {
 	data, err := os.ReadFile(knownHostsPath)
 	if err != nil {
@@ -235,19 +333,15 @@ func hostKeyAlgorithmsFromKnownHosts(knownHostsPath string, addr string) []strin
 	var algorithms []string
 	for _, line := range strings.Split(string(data), "\n") {
 		trimmed := strings.TrimSpace(line)
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") || strings.HasPrefix(trimmed, "@") {
 			continue
 		}
 		fields := strings.Fields(trimmed)
 		if len(fields) < 3 {
 			continue
 		}
-		hosts := strings.Split(fields[0], ",")
-		for _, h := range hosts {
-			if hostMatchesAddr(h, addr) {
-				algorithms = append(algorithms, fields[1])
-				break
-			}
+		if knownHostsLineMatchesAddr(fields[0], addr) {
+			algorithms = append(algorithms, fields[1])
 		}
 	}
 	return algorithms
