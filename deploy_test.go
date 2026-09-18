@@ -499,6 +499,12 @@ func TestLooksLikeNonWindows(t *testing.T) {
 		{"word ending in sh followed by colon", "Publish:  failed to upload the artifact", false},
 		{"shell prefix mid-line is ignored", "Wrote log to C:\\tmp\\bash: notes.txt", false},
 		{"shell prefix on a later line", "#< CLIXML\nksh: powershell: cannot execute", true},
+		// 絶対パスで名乗るシェル。dash の "not found" は message 断片に一致しないため、
+		// basename 一致が無いと Windows 扱いのまま配置経路へ進んでしまう。
+		{"absolute path dash", "/bin/sh: 1: powershell: not found", true},
+		{"absolute path bash", "/usr/bin/bash: powershell: No such file", true},
+		{"absolute path non-shell binary", "/usr/bin/git: 'foo' is not a git command", false},
+		{"absolute path without colon", "/bin/sh is a shell", false},
 	}
 
 	for _, c := range cases {

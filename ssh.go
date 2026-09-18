@@ -223,6 +223,11 @@ func matchHashedHost(pattern, addr string) bool {
 // ここでパターンを展開すると `192.168.1.*` のような 1 行が他ホストの鍵も巻き添えに消える。
 // 読み取り専用の照合（hostKeyAlgorithmsFromKnownHosts）は
 // knownHostsLineMatchesAddr を使い、OpenSSH と同じパターン解釈を行う。
+//
+// 大文字小文字も畳まない（hostPatternMatch とは非対称）。この関数が走るのは
+// x/crypto/ssh/knownhosts のコールバックが「鍵が変わった」と判定した後だけで、
+// そのコールバック自身がバイト完全一致（同パッケージに大小文字を畳む処理は無い）。
+// ここだけ広げると、コールバックが一致させていない行まで削除対象になる。
 func hostMatchesAddr(host, addr string) bool {
 	if strings.HasPrefix(host, "|") {
 		return matchHashedHost(host, addr)
@@ -230,16 +235,32 @@ func hostMatchesAddr(host, addr string) bool {
 	return host == addr
 }
 
+// lowerASCII は ASCII 大文字 1 バイトを小文字に畳む。
+// known_hosts のホストフィールドは ASCII（ホスト名 / IP / `[addr]:port`）なので
+// Unicode 対応（strings.EqualFold）は不要で、バイト単位で足りる。
+func lowerASCII(b byte) byte {
+	if 'A' <= b && b <= 'Z' {
+		return b + ('a' - 'A')
+	}
+	return b
+}
+
 // hostPatternMatch は OpenSSH の known_hosts ホストパターン（`*` = 0 文字以上、
 // `?` = 任意の 1 文字）が addr にマッチするかを判定する。
 // known_hosts のホストフィールドは ASCII（ホスト名 / IP / `[addr]:port`）なので
 // バイト単位で比較する。バックトラックは `*` の位置を 1 つ覚えるだけの線形スキャンで足りる。
+//
+// 比較は**大文字小文字を区別しない**。OpenSSH の match_hostname() はホスト名と
+// パターンの両方を lowercase してから照合するため、区別するとパターン行が
+// 取りこぼされる（`*.Example.COM` が win.example.com に当たらない）か、
+// 否定が効かなくなる（`!WIN.example.com` が win.example.com を除外できない）。
+// どちらもこの関数が解決しようとしているワイルドカード誤警告をそのまま残してしまう。
 func hostPatternMatch(pattern, addr string) bool {
 	pi, ai := 0, 0
 	star, starMatch := -1, 0
 	for ai < len(addr) {
 		switch {
-		case pi < len(pattern) && (pattern[pi] == '?' || pattern[pi] == addr[ai]):
+		case pi < len(pattern) && (pattern[pi] == '?' || lowerASCII(pattern[pi]) == lowerASCII(addr[ai])):
 			pi++
 			ai++
 		case pi < len(pattern) && pattern[pi] == '*':

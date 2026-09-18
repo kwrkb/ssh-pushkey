@@ -222,6 +222,12 @@ func TestHostPatternMatch(t *testing.T) {
 		{"", "", true},
 		{"", "x", false},
 		{"*", "", true},
+		// OpenSSH の match_hostname() はホスト名とパターンの両方を lowercase してから
+		// 照合する。大小を区別すると `*.Example.COM` のようなパターン行を取りこぼす。
+		{"*.Example.COM", "win.example.com", true},
+		{"*.example.com", "WIN.EXAMPLE.COM", true},
+		{"EXAMPLE.com", "example.COM", true},
+		{"WIN.example.com", "lose.example.com", false},
 	}
 	for _, tt := range tests {
 		if got := hostPatternMatch(tt.pattern, tt.addr); got != tt.want {
@@ -247,6 +253,12 @@ func TestKnownHostsLineMatchesAddr(t *testing.T) {
 		{"negation of other host", "192.168.1.*,!192.168.1.11", "192.168.1.10", true},
 		{"hashed", hashed, "secret.example.com", true},
 		{"hashed other addr", hashed, "other.example.com", false},
+		// 否定も大小を区別しない。区別すると `!WIN.example.com` が
+		// win.example.com を除外できず、パターン行が誤って適用される。
+		{"negation folds case", "*.example.com,!WIN.example.com", "win.example.com", false},
+		{"negation folds case on addr", "*.example.com,!win.example.com", "WIN.example.com", false},
+		// ハッシュ化エントリは HMAC がバイト厳密なので畳まない（畳むと照合が壊れる）。
+		{"hashed is not case folded", hashed, "SECRET.example.com", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
