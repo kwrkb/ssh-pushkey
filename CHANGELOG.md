@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-10-18
+
 ### Changed
 
 - Raised the `go` directive in `go.mod` from 1.26.0 to 1.27.2 and dropped the separate `toolchain go1.26.6` line. Building from source (`go install`) now requires Go 1.27.2 or later; older toolchains either download it automatically (`GOTOOLCHAIN=auto`) or stop with a version error instead of building against an unpatched standard library. Termux's `golang` package is at 1.27.2, so `go install` there keeps working after `pkg upgrade`. Release binaries are now built with Go 1.27.2. Go 1.26.6, the previously pinned toolchain, is affected by twelve standard-library advisories published since the last release (in `net/http`, `net/textproto`, `crypto/tls`, `html/template` and `os`); none were reachable from this tool's code.
@@ -213,7 +215,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Duplicate key detection
 - PowerShell remote execution via `-EncodedCommand` (UTF-16LE Base64)
 
-[Unreleased]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.8.3...HEAD
+[Unreleased]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.9.0...HEAD
+[1.9.0]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.8.3...v1.9.0
 [1.8.3]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.8.2...v1.8.3
 [1.8.2]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.8.1...v1.8.2
 [1.8.1]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.8.0...v1.8.1
