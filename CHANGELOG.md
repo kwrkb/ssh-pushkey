@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- Raised the `go` directive in `go.mod` from 1.26.0 to 1.27.2 and dropped the separate `toolchain go1.26.6` line. Building from source (`go install`) now requires Go 1.27.2 or later; older toolchains either download it automatically (`GOTOOLCHAIN=auto`) or stop with a version error instead of building against an unpatched standard library. Termux's `golang` package is at 1.27.2, so `go install` there keeps working after `pkg upgrade`. Release binaries are now built with Go 1.27.2. Go 1.26.6, the previously pinned toolchain, is affected by twelve standard-library advisories published since the last release (in `net/http`, `net/textproto`, `crypto/tls`, `html/template` and `os`); none were reachable from this tool's code.
+- Updated dependencies: `golang.org/x/crypto` v0.57.0 → v0.58.0, `golang.org/x/term` v0.46.0 → v0.47.0. Routine bump to the current releases; no advisory applies to the previous versions. `govulncheck ./...` reports no reachable vulnerabilities.
+- GitLab CI jobs now use the `golang:1.27` image to satisfy the new `go` directive.
+
 ## [1.8.3] - 2026-09-18
 
 ### Fixed
