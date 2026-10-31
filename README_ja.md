@@ -21,7 +21,7 @@ scoop install ssh-pushkey
 
 全プラットフォーム共通の正本は **[GitHub Releases](https://github.com/kwrkb/ssh-pushkey/releases)**。各リリースは `ssh-pushkey_<os>_<arch>.tar.gz`（Windows は `.zip`）のアーカイブと、検証用の `checksums.txt` を配布している。
 
-ソースから入れる場合（Go 1.27.2 以降が必要）:
+ソースから入れる場合（Go 1.27.3 以降が必要）:
 
 ```bash
 go install github.com/kwrkb/ssh-pushkey@latest
