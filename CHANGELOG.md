@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- IPv6 literal targets now connect. The connect address was built as `host:port` with plain string formatting, so `user@::1` (or `HostName ::1` in `~/.ssh/config`) became `::1:22` and failed before connecting with `too many colons in address`; the same string was used for the `known_hosts` lookup, which therefore could not separate the port either. The address is now built with `net.JoinHostPort` (`[::1]:22`), and `known_hosts` entries follow the OpenSSH form (`::1` on port 22, `[::1]:2222` otherwise). A bracketed target such as `user@[::1]` or `HostName [::1]`, which happened to work before, is unwrapped first so it keeps working.
+
 ### Changed
 
 - `make check` and GitHub Actions CI now compile the integration tests with `go test -tags=integration -run '^$' ./...` instead of `go build -tags=integration ./...`. `go build` skips `_test.go` files, so a compile error in `integration_test.go` went unnoticed; the new command compiles the tests without running any of them or contacting a Windows host. `make itest-*` also passes `-count=1` so integration results against a live host are never served from the test cache.

@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf16"
@@ -45,7 +46,7 @@ func dialSSH(user, host string, port int, password string, insecure bool) (*ssh.
 		Timeout: 30 * time.Second,
 	}
 
-	addr := fmt.Sprintf("%s:%d", host, port)
+	addr := sshAddr(host, port)
 	client, err := ssh.Dial("tcp", addr, config)
 	if err != nil && len(hostKeyAlgorithms) > 0 && shouldRetryWithoutHostKeyAlgorithms(err) {
 		// HostKeyAlgorithmsの制限でハンドシェイクが失敗した場合のみ、
@@ -55,6 +56,13 @@ func dialSSH(user, host string, port int, password string, insecure bool) (*ssh.
 		return ssh.Dial("tcp", addr, config)
 	}
 	return client, err
+}
+
+// sshAddr は接続先の "host:port" を組み立てる。IPv6 リテラルは "[::1]:22" の形に括弧で囲む。
+// fmt.Sprintf("%s:%d") だと "::1:22" になり、ssh.Dial が "too many colons" で失敗するうえ、
+// knownhosts.Normalize もポートを分離できず known_hosts の照合先がずれる。
+func sshAddr(host string, port int) string {
+	return net.JoinHostPort(host, strconv.Itoa(port))
 }
 
 // shouldRetryWithoutHostKeyAlgorithms はhost key algorithm制限を外して
@@ -101,7 +109,7 @@ func createHostKeyCallback(host string, port int) (ssh.HostKeyCallback, []string
 		return nil, nil, fmt.Errorf("cannot read known_hosts: %w", err)
 	}
 
-	addr := knownhosts.Normalize(fmt.Sprintf("%s:%d", host, port))
+	addr := knownhosts.Normalize(sshAddr(host, port))
 
 	// known_hostsから対象ホストの鍵アルゴリズムを取得。
 	// OpenSSHはknown_hostsにあるアルゴリズムだけをネゴシエーションするが、

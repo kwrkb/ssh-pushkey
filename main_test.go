@@ -320,6 +320,33 @@ func TestResolveConnection(t *testing.T) {
 		}
 	})
 
+	t.Run("IPv6 literal: bare and bracketed forms resolve to the bare address", func(t *testing.T) {
+		for _, target := range []string{"admin@::1", "admin@[::1]", "admin@[fe80::1%eth0]"} {
+			_, h, _, err := resolveConnection(empty, target, 22, false)
+			if err != nil {
+				t.Fatalf("%s: unexpected error: %v", target, err)
+			}
+			want := strings.TrimSuffix(strings.TrimPrefix(target[len("admin@"):], "["), "]")
+			if h != want {
+				t.Errorf("%s: host = %q, want %q", target, h, want)
+			}
+		}
+	})
+
+	t.Run("bracketed IPv6 HostName from config is unwrapped", func(t *testing.T) {
+		get := fakeGetter(map[string]string{
+			"v6box|HostName": "[2001:db8::10]",
+			"v6box|User":     "admin",
+		})
+		_, h, _, err := resolveConnection(get, "v6box", 22, false)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if h != "2001:db8::10" {
+			t.Errorf("host = %q, want 2001:db8::10", h)
+		}
+	})
+
 	t.Run("host-only with no config and no user -> error", func(t *testing.T) {
 		_, _, _, err := resolveConnection(empty, "myserver", 22, false)
 		if err == nil {
