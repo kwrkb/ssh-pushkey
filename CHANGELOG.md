@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Fixed
 
 - IPv6 literal targets now connect. The connect address was built as `host:port` with plain string formatting, so `user@::1` (or `HostName ::1` in `~/.ssh/config`) became `::1:22` and failed before connecting with `too many colons in address`; the same string was used for the `known_hosts` lookup, which therefore could not separate the port either. The address is now built with `net.JoinHostPort` (`[::1]:22`), and `known_hosts` entries follow the OpenSSH form (`::1` on port 22, `[::1]:2222` otherwise). A bracketed target such as `user@[::1]` or `HostName [::1]`, which happened to work before, is unwrapped first so it keeps working.
+- Re-running the tool now repairs permissions when the key is already present. Previously the remote script stopped as soon as it found the key (`Key already exists …, skipping`), before the `icacls` calls. If an earlier run had appended the key but failed to set the ACL, every later run reported success and left the inherited permissions in place, which can make sshd ignore `administrators_authorized_keys`. The key is still never appended twice and existing lines are left as they are, but the directory and key file ACLs are now applied on every run, and an ACL failure is reported as an error again. The message is now `Key already exists in …, permissions re-applied`. `--dry-run` still changes nothing. ACEs that someone added explicitly (other than SYSTEM, Administrators and the connecting user) are not removed, as before.
 
 ### Changed
 

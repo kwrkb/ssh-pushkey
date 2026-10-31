@@ -228,6 +228,42 @@ func TestBuildDeployScript_AclErrorCapture(t *testing.T) {
 	}
 }
 
+// 鍵が既に存在しても ACL 設定まで進むこと。追記は $exists で囲んでスキップし、結果マーカーは
+// ACL 設定の後に出す。重複時に先に exit すると、前回 icacls が失敗した状態を再実行で修復できない。
+func TestBuildDeployScript_ExistingKeyStillAppliesACL(t *testing.T) {
+	for _, isAdmin := range []bool{true, false} {
+		name := "normal"
+		if isAdmin {
+			name = "admin"
+		}
+		t.Run(name, func(t *testing.T) {
+			script := buildDeployScript("ssh-ed25519 AAAA test", "ssh-ed25519 AAAA", isAdmin, false)
+
+			// dry-run ブロック以降に exit 0 が無いこと（重複時の早期終了を戻さない）
+			dryRunEnd := strings.Index(script, "if ($dryRun) {")
+			if dryRunEnd < 0 {
+				t.Fatalf("dry-run block not found\n\nscript:\n%s", script)
+			}
+			afterDryRun := script[dryRunEnd:]
+			afterDryRun = afterDryRun[strings.Index(afterDryRun, "\n}\n")+3:]
+			if strings.Contains(afterDryRun, "exit 0") {
+				t.Errorf("script must not exit early after the dry-run block\n\nscript:\n%s", script)
+			}
+
+			guardIdx := strings.Index(script, "if (-not $exists) {")
+			appendIdx := strings.Index(script, "[System.IO.File]::AppendAllText")
+			fileAclIdx := strings.Index(script, "& icacls $keyFile")
+			existsMarkerIdx := strings.Index(script, `Write-Output "KEY_ALREADY_EXISTS:$keyFile"`)
+			if guardIdx < 0 || appendIdx < guardIdx {
+				t.Errorf("append must be guarded by if (-not $exists)\n\nscript:\n%s", script)
+			}
+			if fileAclIdx < 0 || existsMarkerIdx < fileAclIdx {
+				t.Errorf("KEY_ALREADY_EXISTS must be emitted only after the key file ACL is set\n\nscript:\n%s", script)
+			}
+		})
+	}
+}
+
 // 通常実行でも実際の配置先パスを報告できるよう、結果マーカーに $keyFile を付けていること。
 // 非 Admin 時の配置先は $env:USERPROFILE 展開後にしか確定しないため、Go 側では組み立てられない。
 func TestBuildDeployScript_ResultMarkersCarryKeyFile(t *testing.T) {

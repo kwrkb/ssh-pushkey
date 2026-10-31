@@ -58,25 +58,27 @@ func buildDeployScript(pubKey, keyBlob string, isAdmin bool, dryRun bool) string
 	sb.WriteString("  exit 0\n")
 	sb.WriteString("}\n")
 
-	// 既に存在すればスキップ。dry-run と同様、実際の配置先パスをマーカーに付けて返す
-	// （非 Admin 時の $env:USERPROFILE 展開結果は Go 側では分からないため）。
-	sb.WriteString("if ($exists) { Write-Output \"KEY_ALREADY_EXISTS:$keyFile\"; exit 0 }\n")
+	// 既に存在すれば追記だけをスキップし、ACL 設定には進む。ここで exit すると、前回の実行で
+	// 追記後に icacls が失敗した場合に、再実行しても ACL が未修復のまま成功扱いになる。
+	// 結果マーカー（KEY_ALREADY_EXISTS / KEY_DEPLOYED）は ACL 設定の成功後に出す。
+	sb.WriteString("if (-not $exists) {\n")
 
 	// ディレクトリ作成
-	sb.WriteString("if (-not (Test-Path $sshDir)) { New-Item -ItemType Directory -Path $sshDir -Force | Out-Null }\n")
+	sb.WriteString("  if (-not (Test-Path $sshDir)) { New-Item -ItemType Directory -Path $sshDir -Force | Out-Null }\n")
 
 	// 既存ファイルが末尾改行で終わらない場合、追記前に改行を補い行連結による鍵破損を防ぐ。
 	// 手動・他ツール・MS 公式手順のスニペットで作られた authorized_keys は末尾改行なしのことが
 	// あり、そのまま追記すると新旧の鍵が1行に連結して両方とも認証不能になる（ssh-copy-id 本家準拠）。
 	// $ErrorActionPreference='Stop' 区間内のため読み取り失敗時は throw（追記も失敗するので整合的）。
-	sb.WriteString("$nl = ''\n")
-	sb.WriteString("if (Test-Path $keyFile) {\n")
-	sb.WriteString("  $existing = [System.IO.File]::ReadAllBytes($keyFile)\n")
-	sb.WriteString("  if ($existing.Length -gt 0 -and $existing[$existing.Length - 1] -ne 10) { $nl = \"`n\" }\n")
-	sb.WriteString("}\n")
+	sb.WriteString("  $nl = ''\n")
+	sb.WriteString("  if (Test-Path $keyFile) {\n")
+	sb.WriteString("    $existing = [System.IO.File]::ReadAllBytes($keyFile)\n")
+	sb.WriteString("    if ($existing.Length -gt 0 -and $existing[$existing.Length - 1] -ne 10) { $nl = \"`n\" }\n")
+	sb.WriteString("  }\n")
 
 	// BOMなしUTF-8で追記
-	sb.WriteString("[System.IO.File]::AppendAllText($keyFile, $nl + $pubKey + \"`n\", (New-Object System.Text.UTF8Encoding $false))\n")
+	sb.WriteString("  [System.IO.File]::AppendAllText($keyFile, $nl + $pubKey + \"`n\", (New-Object System.Text.UTF8Encoding $false))\n")
+	sb.WriteString("}\n")
 
 	// ACL設定（SIDベース：言語非依存）
 	// S-1-5-18 = NT AUTHORITY\SYSTEM
@@ -94,7 +96,9 @@ func buildDeployScript(pubKey, keyBlob string, isAdmin bool, dryRun bool) string
 	sb.WriteString("$fileAclOut = & icacls $keyFile /inheritance:r /grant '*S-1-5-18:(F)' /grant '*S-1-5-32-544:(F)' /grant \"*${userSid}:(F)\" 2>&1\n")
 	sb.WriteString("if ($LASTEXITCODE -ne 0) { Write-Output \"ACL_SET_FAILED_FILE|$fileAclOut\"; exit 1 }\n")
 
-	sb.WriteString("Write-Output \"KEY_DEPLOYED:$keyFile\"\n")
+	// dry-run と同様、実際の配置先パスをマーカーに付けて返す
+	// （非 Admin 時の $env:USERPROFILE 展開結果は Go 側では分からないため）。
+	sb.WriteString("if ($exists) { Write-Output \"KEY_ALREADY_EXISTS:$keyFile\" } else { Write-Output \"KEY_DEPLOYED:$keyFile\" }\n")
 
 	return sb.String()
 }
@@ -153,7 +157,7 @@ func printDryRunResult(output string) {
 		case strings.HasPrefix(line, "DRY_RUN_TARGET:"):
 			fmt.Printf("=> [DRY-RUN] Deployment target: %s\n", strings.TrimPrefix(line, "DRY_RUN_TARGET:"))
 		case line == "DRY_RUN_DUP:True":
-			fmt.Println("=> [DRY-RUN] Key already exists, would skip")
+			fmt.Println("=> [DRY-RUN] Key already exists, would re-apply permissions only")
 		case line == "DRY_RUN_DUP:False":
 			fmt.Println("=> [DRY-RUN] Key would be newly deployed")
 		}
@@ -446,7 +450,7 @@ func DeployKey(client *ssh.Client, pubKey string, dryRun bool) error {
 	case hasMarkerLine(result, "DRY_RUN_TARGET:"):
 		printDryRunResult(result)
 	case hasMarkerLine(result, "KEY_ALREADY_EXISTS:"):
-		fmt.Printf("=> Key already exists in %s, skipping\n", markerValue(result, "KEY_ALREADY_EXISTS:"))
+		fmt.Printf("=> Key already exists in %s, permissions re-applied\n", markerValue(result, "KEY_ALREADY_EXISTS:"))
 	case hasMarkerLine(result, "KEY_DEPLOYED:"):
 		fmt.Printf("=> Key deployed to %s\n", markerValue(result, "KEY_DEPLOYED:"))
 	default:

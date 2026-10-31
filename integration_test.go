@@ -110,7 +110,7 @@ func TestIntegration_DeployKey(t *testing.T) {
 		t.Fatalf("key deployment failed: %v", err)
 	}
 
-	// 2回目は重複スキップされることを確認
+	// 2回目は追記せず（重複判定）、ACL の再設定だけで成功することを確認
 	if err := DeployKey(client, pubKey, false); err != nil {
 		t.Fatalf("second deployment failed: %v", err)
 	}
@@ -303,6 +303,94 @@ func TestIntegration_AppendToFileWithoutTrailingNewline(t *testing.T) {
 	}
 	if !strings.Contains(out, "HASNEW:1") {
 		t.Errorf("the newly deployed key must be present on its own line\noutput:\n%s", out)
+	}
+}
+
+// TestIntegration_ReapplyACLOnExistingKey は、鍵が既に配置済みでも DeployKey が ACL を
+// 設定し直すことを検証する。前回の実行で追記後に icacls が失敗した状態を、継承の再有効化で
+// 再現する（継承 ACE が残り、保護フラグが外れた状態）。修正前は重複判定で即終了していたため、
+// 再実行しても ACL は崩れたままだった。
+func TestIntegration_ReapplyACLOnExistingKey(t *testing.T) {
+	env := loadTestEnv(t)
+
+	pubKey, _, err := resolveKey(os.Getenv("SSH_TEST_PUBKEY"))
+	if err != nil {
+		t.Fatalf("failed to read public key: %v", err)
+	}
+
+	client, err := dialSSH(env.user, env.host, env.port, env.password, true)
+	if err != nil {
+		t.Fatalf("SSH connection failed: %v", err)
+	}
+	defer client.Close()
+
+	// 鍵を配置済みの状態にする（既にあれば重複扱い）
+	if err := DeployKey(client, pubKey, false); err != nil {
+		t.Fatalf("key deployment failed: %v", err)
+	}
+
+	target, err := resolveKeyFileTarget(client)
+	if err != nil {
+		t.Fatalf("resolveKeyFileTarget failed: %v", err)
+	}
+
+	// $keyFile / $sshDir の決定は buildDeployScript と同じ式に合わせる。
+	pathExpr := "$keyFile = Join-Path $env:USERPROFILE '.ssh\\authorized_keys'; $sshDir = Join-Path $env:USERPROFILE '.ssh'"
+	if target.isAdmin {
+		pathExpr = "$keyFile = 'C:\\ProgramData\\ssh\\administrators_authorized_keys'; $sshDir = 'C:\\ProgramData\\ssh'"
+	}
+
+	// 後始末: DeployKey が修復できなかった場合でも、ディレクトリと鍵ファイルの継承を外して
+	// 3 SID に戻す（崩れたまま残すと sshd が鍵ファイルを拒否し得る）。
+	defer func() {
+		restore := pathExpr + "; $sid = ([System.Security.Principal.WindowsIdentity]::GetCurrent()).User.Value" +
+			"; foreach ($p in @($sshDir, $keyFile)) { icacls $p /inheritance:r /grant '*S-1-5-18:(F)' /grant '*S-1-5-32-544:(F)' /grant \"*${sid}:(F)\" | Out-Null }"
+		if _, rerr := runRemotePowerShell(client, restore); rerr != nil {
+			t.Errorf("failed to restore ACL (manual cleanup may be required): %v", rerr)
+		}
+	}()
+
+	// ACL を崩す: ディレクトリと鍵ファイルの継承を再有効化する
+	if out, err := runRemotePowerShell(client, pathExpr+
+		"; icacls $sshDir /inheritance:e | Out-Null; icacls $keyFile /inheritance:e | Out-Null"+
+		"; if ((Get-Acl $keyFile).AreAccessRulesProtected) { Write-Output 'CORRUPT:False' } else { Write-Output 'CORRUPT:True' }"); err != nil {
+		t.Fatalf("failed to corrupt ACL: %v", err)
+	} else if !hasMarkerLine(out, "CORRUPT:True") {
+		t.Fatalf("precondition: key file ACL should be inheritable after corruption\noutput:\n%s", out)
+	}
+
+	// 再実行で修復されること
+	if err := DeployKey(client, pubKey, false); err != nil {
+		t.Fatalf("redeployment failed: %v", err)
+	}
+
+	// 検証は remote 側で完結させ、マーカーだけを返す。継承が外れ（保護フラグ）、継承 ACE が無く、
+	// SYSTEM / Administrators / 実行ユーザーの FullControl が揃っていること。
+	// 3 SID 以外の明示 ACE は数えない。icacls /grant は既存の明示 ACE を消さないため（設計上の範囲外）、
+	// 他テストのバックアップ・復元で作り直したファイルには作成者トークン既定の
+	// LogonSessionId（S-1-5-5-0-*）の読み取り ACE が残る。
+	check := pathExpr + "; $sid = ([System.Security.Principal.WindowsIdentity]::GetCurrent()).User.Value" +
+		"; $allowed = @('S-1-5-18', 'S-1-5-32-544', $sid)" +
+		"; foreach ($e in @(@('DIR', $sshDir), @('FILE', $keyFile))) {" +
+		"  $acl = Get-Acl $e[1]" +
+		"; $rules = @($acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]))" +
+		"; $inherited = @($rules | Where-Object { $_.IsInherited }).Count" +
+		"; $full = @($rules | Where-Object { $allowed -contains $_.IdentityReference.Value -and $_.AccessControlType -eq 'Allow' -and $_.FileSystemRights -eq 'FullControl' }).Count" +
+		"; Write-Output \"$($e[0])_PROTECTED:$($acl.AreAccessRulesProtected)\"" +
+		"; Write-Output \"$($e[0])_INHERITED:$inherited\"" +
+		"; Write-Output \"$($e[0])_FULL:$full\"" +
+		" }"
+	out, err := runRemotePowerShell(client, check)
+	if err != nil {
+		t.Fatalf("failed to inspect ACL: %v", err)
+	}
+	for _, want := range []string{
+		"DIR_PROTECTED:True", "DIR_INHERITED:0", "DIR_FULL:3",
+		"FILE_PROTECTED:True", "FILE_INHERITED:0", "FILE_FULL:3",
+	} {
+		if !hasMarkerLine(out, want) {
+			t.Errorf("ACL should be repaired on redeploy of an existing key (missing %q)\noutput:\n%s", want, out)
+		}
 	}
 }
 
