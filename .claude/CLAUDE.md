@@ -21,7 +21,7 @@ Windows OpenSSH サーバーへ SSH 公開鍵を配置する CLI ツール（`ss
 make build         # go build -ldflags "-X main.version=dev" ./...
 make test          # go test ./...
 make vet           # go vet ./...
-make check         # build + vet + test + `go build -tags=integration ./...`（PR 前必須）
+make check         # build + vet + test + `go test -tags=integration -run '^$' ./...`（PR 前必須）
 make itest-admin   # 統合テスト（管理者アカウント / .env.integration）
 make itest-user    # 統合テスト（一般アカウント / .env.integration.user）
 make itest-all     # admin → user の順で両方
@@ -43,7 +43,7 @@ make itest-all     # admin → user の順で両方
 - リリース手順: `CHANGELOG.md` 更新 → タグ作成 → 両リモートに push → 両 CI が自動でリリース作成
 - リリース後は `gh api repos/kwrkb/ssh-pushkey/releases/tags/<tag> --jq '(.body|length)'` で本文が入ったか確認する（アセットの有無だけで判断しない）
 - `.goreleaser.yaml` を変えたらマージ前に `goreleaser check` → `goreleaser release --snapshot --clean` でローカル検証する（CI と同じ v2 系を使う）
-- CI: `.github/workflows/ci.yml` が PR / master push で build + vet + test + integration ビルドを実行（Go は `go.mod` 準拠）。`make check` とほぼ同内容なのでローカルで通れば CI も通る
+- CI: `.github/workflows/ci.yml` が PR / master push で build + vet + test + integration テストのコンパイル検査を実行（Go は `go.mod` 準拠）。`make check` とほぼ同内容なのでローカルで通れば CI も通る
 
 ## テスト方針
 
@@ -54,7 +54,7 @@ make itest-all     # admin → user の順で両方
   - `.env.integration.user` — 一般アカウント（例: `pushuser`）
   - 各ファイルは `export SSH_TEST_HOST=... / SSH_TEST_USER=... / SSH_TEST_PASSWORD=...` を定義
   - 値に 1Password の `op://<vault>/<item>/<field>` 参照を書ける。その場合 Makefile は `source` ではなく `op run --env-file` に委譲して解決する（`op` CLI とサインインが必要）
-- PR 前は `make check` を必ず実行（build + vet + test + integration ビルド検証で build tag 付きファイルのコンパイル崩れを検知）
+- PR 前は `make check` を必ず実行（build + vet + test + integration テストのコンパイル検査で build tag 付きファイルの崩れを検知。`go build` は `_test.go` をコンパイルしないので使わない）
 
 ## Windows OpenSSH 固有ルール
 
