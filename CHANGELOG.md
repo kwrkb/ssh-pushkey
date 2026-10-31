@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.9.1] - 2026-10-31
+
 ### Fixed
 
 - IPv6 literal targets now connect. The connect address was built as `host:port` with plain string formatting, so `user@::1` (or `HostName ::1` in `~/.ssh/config`) became `::1:22` and failed before connecting with `too many colons in address`; the same string was used for the `known_hosts` lookup, which therefore could not separate the port either. The address is now built with `net.JoinHostPort` (`[::1]:22`), and `known_hosts` entries follow the OpenSSH form (`::1` on port 22, `[::1]:2222` otherwise). A bracketed target such as `user@[::1]` or `HostName [::1]`, which happened to work before, is unwrapped first so it keeps working.
@@ -225,7 +227,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Duplicate key detection
 - PowerShell remote execution via `-EncodedCommand` (UTF-16LE Base64)
 
-[Unreleased]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.9.0...HEAD
+[Unreleased]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.9.1...HEAD
+[1.9.1]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.9.0...v1.9.1
 [1.9.0]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.8.3...v1.9.0
 [1.8.3]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.8.2...v1.8.3
 [1.8.2]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.8.1...v1.8.2
