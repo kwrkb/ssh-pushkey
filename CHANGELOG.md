@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- Raised the `go` directive in `go.mod` from 1.27.2 to 1.27.3. Building from source (`go install`) now requires Go 1.27.3 or later, and release binaries are built with it. Go 1.27.3 (2026-10-19) includes a security fix in `crypto/x509`. Termux's `golang` package is already at 1.27.3, so `go install` there keeps working after `pkg upgrade`; the `golang:1.27` image used by GitLab CI resolves to 1.27.3 as well. `govulncheck ./...` reports no reachable vulnerabilities.
 - `make check` and GitHub Actions CI now compile the integration tests with `go test -tags=integration -run '^$' ./...` instead of `go build -tags=integration ./...`. `go build` skips `_test.go` files, so a compile error in `integration_test.go` went unnoticed; the new command compiles the tests without running any of them or contacting a Windows host. `make itest-*` also passes `-count=1` so integration results against a live host are never served from the test cache.
 
 ## [1.9.0] - 2026-10-18

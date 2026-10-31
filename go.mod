@@ -1,6 +1,6 @@
 module github.com/kwrkb/ssh-pushkey
 
-go 1.27.2
+go 1.27.3
 
 require (
 	github.com/kevinburke/ssh_config v1.6.0

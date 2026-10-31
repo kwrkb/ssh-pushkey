@@ -21,7 +21,7 @@ scoop install ssh-pushkey
 
 On any platform, download an archive from **[GitHub Releases](https://github.com/kwrkb/ssh-pushkey/releases)** — the canonical distribution source. Each release ships `ssh-pushkey_<os>_<arch>.tar.gz` (`.zip` on Windows) with a `checksums.txt` to verify against.
 
-Or install from source (requires Go 1.27.2 or later):
+Or install from source (requires Go 1.27.3 or later):
 
 ```bash
 go install github.com/kwrkb/ssh-pushkey@latest
