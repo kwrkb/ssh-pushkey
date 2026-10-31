@@ -109,7 +109,7 @@ func main() {
 
 	fmt.Printf("=> Public key loaded: %s\n", keySource)
 
-	fmt.Printf("=> Connecting to %s@%s:%d...\n", user, host, resolvedPort)
+	fmt.Printf("=> Connecting to %s@%s...\n", user, sshAddr(host, resolvedPort))
 	password, err := promptPassword(fmt.Sprintf("%s@%s's password: ", user, host))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -304,6 +304,11 @@ func resolveConnection(get sshConfigGetter, rawTarget string, cliPort int, portE
 	host = alias
 	if hn, _ := get(alias, "HostName"); hn != "" {
 		host = hn
+	}
+	// IPv6 リテラルの括弧（user@[::1]）は外す。接続先は sshAddr が括弧を付け直すため、
+	// 残すと "[[::1]]:22" になる。ssh_config の Host 照合は入力どおりの alias で行う。
+	if len(host) > 2 && host[0] == '[' && host[len(host)-1] == ']' {
+		host = host[1 : len(host)-1]
 	}
 
 	// User: explicit user@ wins; otherwise ssh_config User; otherwise error.

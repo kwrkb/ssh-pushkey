@@ -69,6 +69,16 @@ func generateRSAHostKey(t *testing.T) ssh.Signer {
 // ホスト鍵は可変長で受け取り、複数渡すと実機同様に複数種別を提供するサーバになる。
 func startTestSSHServer(t *testing.T, hostKeys ...ssh.Signer) int {
 	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	return serveTestSSH(t, ln, hostKeys...)
+}
+
+// serveTestSSH は任意のリスナー上でテスト用 SSH サーバを動かし、ポートを返す。
+func serveTestSSH(t *testing.T, ln net.Listener, hostKeys ...ssh.Signer) int {
+	t.Helper()
 
 	config := &ssh.ServerConfig{
 		PasswordCallback: func(c ssh.ConnMetadata, pass []byte) (*ssh.Permissions, error) {
@@ -82,10 +92,6 @@ func startTestSSHServer(t *testing.T, hostKeys ...ssh.Signer) int {
 		config.AddHostKey(hostKey)
 	}
 
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("listen: %v", err)
-	}
 	t.Cleanup(func() { ln.Close() })
 
 	go func() {
@@ -474,4 +480,43 @@ func TestHostKeyVerification_WildcardAlgorithmMismatch_RetriesAndPrompts(t *test
 	if !strings.Contains(string(after), keyB64(rsaKey.PublicKey())) {
 		t.Errorf("accepted host key was not appended\ngot: %q", string(after))
 	}
+}
+
+// TestHostKeyVerification_IPv6_TOFUAcceptThenNoFalsePositive は IPv6 リテラルの接続先で
+// dialSSH が接続でき、known_hosts に OpenSSH と同じ "[::1]:<port>" 形式で記録され、
+// 2 回目の接続でプロンプトが出ないことを検証する。
+func TestHostKeyVerification_IPv6_TOFUAcceptThenNoFalsePositive(t *testing.T) {
+	ln, err := net.Listen("tcp", "[::1]:0")
+	if err != nil {
+		t.Skipf("IPv6 loopback unavailable: %v", err)
+	}
+	hostKey := generateHostKey(t)
+	port := serveTestSSH(t, ln, hostKey)
+	khPath := tempHome(t)
+
+	count := overridePrompt(t, "yes")
+	client, err := dialSSH(testSSHUser, "::1", port, testSSHPassword, false)
+	if err != nil {
+		t.Fatalf("TOFU accept dial to ::1 should succeed: %v", err)
+	}
+	client.Close()
+	if *count != 1 {
+		t.Errorf("expected exactly 1 prompt on first connect, got %d", *count)
+	}
+
+	data, err := os.ReadFile(khPath)
+	if err != nil {
+		t.Fatalf("read known_hosts: %v", err)
+	}
+	wantPrefix := fmt.Sprintf("[::1]:%d ", port)
+	if !strings.HasPrefix(string(data), wantPrefix) {
+		t.Errorf("known_hosts entry should start with %q\ncontent:\n%s", wantPrefix, data)
+	}
+
+	failIfPrompted(t)
+	client2, err := dialSSH(testSSHUser, "::1", port, testSSHPassword, false)
+	if err != nil {
+		t.Fatalf("second connect to a now-known IPv6 host should succeed without prompting: %v", err)
+	}
+	client2.Close()
 }

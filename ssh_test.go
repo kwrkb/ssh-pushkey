@@ -331,3 +331,46 @@ func TestHostKeyAlgorithmsFromKnownHosts(t *testing.T) {
 		}
 	})
 }
+
+func TestSSHAddr(t *testing.T) {
+	cases := []struct {
+		host       string
+		port       int
+		wantDial   string
+		wantKnownH string // knownhosts.Normalize の結果（known_hosts の照合・追記に使う形）
+	}{
+		{"192.168.1.10", 22, "192.168.1.10:22", "192.168.1.10"},
+		{"192.168.1.10", 2222, "192.168.1.10:2222", "[192.168.1.10]:2222"},
+		{"win.example.com", 22, "win.example.com:22", "win.example.com"},
+		{"win.example.com", 2222, "win.example.com:2222", "[win.example.com]:2222"},
+		{"::1", 22, "[::1]:22", "::1"},
+		{"::1", 2222, "[::1]:2222", "[::1]:2222"},
+		{"2001:db8::10", 22, "[2001:db8::10]:22", "2001:db8::10"},
+	}
+	for _, c := range cases {
+		got := sshAddr(c.host, c.port)
+		if got != c.wantDial {
+			t.Errorf("sshAddr(%q, %d) = %q, want %q", c.host, c.port, got, c.wantDial)
+		}
+		if n := knownhosts.Normalize(got); n != c.wantKnownH {
+			t.Errorf("Normalize(sshAddr(%q, %d)) = %q, want %q", c.host, c.port, n, c.wantKnownH)
+		}
+	}
+}
+
+func TestHostKeyAlgorithmsFromKnownHosts_IPv6(t *testing.T) {
+	const edKey = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIdummy"
+	const rsaKey = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDdummy"
+	path := filepath.Join(t.TempDir(), "known_hosts")
+	content := "::1 " + edKey + "\n[::1]:2222 " + rsaKey + "\n"
+	if err := os.WriteFile(path, []byte(content), 0600); err != nil {
+		t.Fatalf("write known_hosts: %v", err)
+	}
+
+	if got := hostKeyAlgorithmsFromKnownHosts(path, knownhosts.Normalize(sshAddr("::1", 22))); len(got) != 1 || got[0] != "ssh-ed25519" {
+		t.Errorf("port 22: got %v, want [ssh-ed25519]", got)
+	}
+	if got := hostKeyAlgorithmsFromKnownHosts(path, knownhosts.Normalize(sshAddr("::1", 2222))); len(got) != 1 || got[0] != "ssh-rsa" {
+		t.Errorf("port 2222: got %v, want [ssh-rsa]", got)
+	}
+}

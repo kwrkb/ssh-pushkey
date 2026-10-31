@@ -546,3 +546,10 @@
 - 却下した案: 前回同様、ローカルで素の `govulncheck ./...` を実行して「到達可能 0 件・stdlib 指摘なし」をもってリリース版も問題なしとみなす。
 - 決め手: ローカルの `/usr/local/go` が go1.27.2、`go.mod` が `toolchain go1.26.6` の状態で素の `govulncheck` は stdlib の指摘を 1 件も出さなかったが、`GOTOOLCHAIN=go1.26.6 govulncheck -show verbose ./...` では stdlib@go1.26.6 に対する 12 件（Module / Package Results、いずれも到達不能）が出た。`GOTOOLCHAIN=auto` は `toolchain` 行より新しいローカル版をそのまま使うため、スキャン対象の stdlib が CI・GoReleaser が実際に使う版とずれる。検証時は `GOTOOLCHAIN=<toolchain 行の版>` を付けて `make check` と `govulncheck` を回すと一致する。
 - 覆す条件: `toolchain` 行を使わず `go` 行とローカル版が一致する構成が続く場合（今回の変更後はこの状態）。`toolchain` 行を再び導入したら、この手順を再び適用する。
+
+## 2026-10-31: IPv6 対応で接続先の角括弧（`user@[::1]`）を外してから組み立てる
+
+- 却下した案: (A) `host:port` の組み立てを `net.JoinHostPort` に置き換えるだけにする。(B) 括弧付きの入力をエラーにして、括弧なしの `user@::1` だけを受け付ける。
+- 決め手: 修正前の `fmt.Sprintf("%s:%d")` では、括弧なしの `::1` は `::1:22` になり接続前に失敗する一方、括弧付きの `[::1]` は偶然 `[::1]:22` になって接続できていた。(A) は `JoinHostPort` が括弧を付け足すため `[[::1]]:22` となり、偶然動いていた入力を壊す。(B) も同じ入力を新たに拒否することになる。括弧は接続先を決めた後（CLI の alias と ssh_config の `HostName` の両方）で外し、接続先・known_hosts 照合・表示はすべて同じ組み立て関数を通すと、両方の書き方が同じ `[::1]:22`（known_hosts 上は port 22 なら `::1`、それ以外なら `[::1]:<port>`）に揃った。ssh_config の `Host` 照合には括弧を外す前の入力をそのまま使う。
+- 覆す条件: ssh_config の `Host` パターンを括弧なしの IPv6 で書く利用者が括弧付きで指定し、alias が一致しないという報告が来た場合。その時は照合前にも括弧を外すかを決め直す。
+
