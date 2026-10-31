@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Re-running the tool now repairs permissions when the key is already present. Previously the remote script stopped as soon as it found the key (`Key already exists …, skipping`), before the `icacls` calls. If an earlier run had appended the key but failed to set the ACL, every later run reported success and left the inherited permissions in place, which can make sshd ignore `administrators_authorized_keys`. The key is still never appended twice and existing lines are left as they are, but the directory and key file ACLs are now applied on every run, and an ACL failure is reported as an error again. The message is now `Key already exists in …, permissions re-applied`. `--dry-run` still changes nothing. ACEs that someone added explicitly (other than SYSTEM, Administrators and the connecting user) are not removed, as before.
+
 ## [1.9.0] - 2026-10-18
 
 ### Changed
