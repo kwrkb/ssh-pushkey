@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- `make check` and GitHub Actions CI now compile the integration tests with `go test -tags=integration -run '^$' ./...` instead of `go build -tags=integration ./...`. `go build` skips `_test.go` files, so a compile error in `integration_test.go` went unnoticed; the new command compiles the tests without running any of them or contacting a Windows host. `make itest-*` also passes `-count=1` so integration results against a live host are never served from the test cache.
+
 ## [1.9.0] - 2026-10-18
 
 ### Changed

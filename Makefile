@@ -51,20 +51,22 @@ define run_itest
 			exit 1; \
 		fi; \
 		echo "=> 統合テスト（$(2): op run で $(1) を解決）"; \
-		op run --env-file=$(1) -- go test -tags=integration -v $(if $(RUN),-run "$(RUN)",) ./...; \
+		op run --env-file=$(1) -- go test -tags=integration -count=1 -v $(if $(RUN),-run "$(RUN)",) ./...; \
 	else \
 		set -a; . ./$(1); set +a; \
 		: "$${SSH_TEST_HOST:?$(1) に SSH_TEST_HOST が未定義}"; \
 		: "$${SSH_TEST_USER:?$(1) に SSH_TEST_USER が未定義}"; \
 		: "$${SSH_TEST_PASSWORD:?$(1) に SSH_TEST_PASSWORD が未定義}"; \
 		echo "=> 統合テスト（$(2): $$SSH_TEST_USER@$$SSH_TEST_HOST）"; \
-		go test -tags=integration -v $(if $(RUN),-run "$(RUN)",) ./...; \
+		go test -tags=integration -count=1 -v $(if $(RUN),-run "$(RUN)",) ./...; \
 	fi
 endef
 
 # PR 前チェック（build tag 付きファイルのコンパイル崩れ検知含む）
+# `go build` は _test.go をコンパイルしないため、integration_test.go の崩れは
+# `go test -run '^$'`（テストを1件も実行しないコンパイル検査）で検知する。
 check: build vet test
-	go build -tags=integration ./...
+	go test -tags=integration -run '^$$' ./...
 	@echo "=== all checks passed ==="
 
 help:
