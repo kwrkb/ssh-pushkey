@@ -1,8 +1,12 @@
 package main
 
 import (
+	"crypto/ed25519"
+	"crypto/rand"
 	"strings"
 	"testing"
+
+	"golang.org/x/crypto/ssh"
 )
 
 func TestBuildDeployScript_Admin(t *testing.T) {
@@ -611,4 +615,124 @@ func TestSshdMatchSpecSuffixFromOutput(t *testing.T) {
 			}
 		})
 	}
+}
+
+// authorizedKeysLineHasBlob は buildDeployScript が生成する PowerShell の重複判定を Go に
+// 写したもの（テスト専用）。生成スクリプト側との対応は TestBuildDeployScript_DuplicateCheckParsesKeyPosition
+// で文字列として固定し、アルゴリズムの正しさはここで ssh.ParseAuthorizedKey と突き合わせる。
+// PowerShell そのものの実行はこのテストでは確認できないため、実機は統合テストで確かめる。
+func authorizedKeysLineHasBlob(line, keyBlob string) bool {
+	t := strings.TrimSpace(line)
+	if t == "" || strings.HasPrefix(t, "#") {
+		return false
+	}
+	pair := func(s string) string {
+		parts := strings.Fields(s)
+		if len(parts) < 2 {
+			return ""
+		}
+		return parts[0] + " " + parts[1]
+	}
+	if pair(t) == keyBlob {
+		return true
+	}
+	quoted := false
+	j := 0
+	for j < len(t) {
+		c := t[j]
+		if !quoted && (c == ' ' || c == '\t') {
+			break
+		}
+		if c == '\\' && j+1 < len(t) && t[j+1] == '"' {
+			j += 2
+			continue
+		}
+		if c == '"' {
+			quoted = !quoted
+		}
+		j++
+	}
+	return pair(t[j:]) == keyBlob
+}
+
+// TestAuthorizedKeysDuplicateCheck は重複判定が「行の鍵本体」だけを比較し、
+// コメントや引用 options に紛れた鍵文字列を既存扱いしないことを検証する（Issue #33 AUD-001）。
+// 期待値は ssh.ParseAuthorizedKey（OpenSSH 互換の正規 parser）の結果からも求め、両者の一致を確認する。
+func TestAuthorizedKeysDuplicateCheck(t *testing.T) {
+	keyA := newTestPubKeyBlob(t)
+	keyB := newTestPubKeyBlob(t)
+
+	cases := []struct {
+		name string
+		line string
+		want bool // keyB が既存か
+	}{
+		{"plain key", keyB + " user@host", true},
+		{"plain key without comment", keyB, true},
+		{"tab separated", strings.Replace(keyB, " ", "\t", 1) + "\tuser@host", true},
+		{"simple options", "no-pty,no-port-forwarding " + keyB + " user@host", true},
+		{"quoted option with spaces", `command="echo hello world" ` + keyB + " user@host", true},
+		{"escaped quote in option", `command="echo \"a b\"" ` + keyB, true},
+		{"other key with target in comment", keyA + " note " + keyB, false},
+		{"other key with target right after blob", keyA + " " + keyB, false},
+		{"target inside quoted option of other key", `command="echo ` + keyB + `" ` + keyA, false},
+		{"options line with target in comment", "no-pty " + keyA + " " + keyB, false},
+		{"unterminated quote", `command="echo ` + keyB, false},
+		{"other key only", keyA + " user@host", false},
+		{"comment line", "# " + keyB, false},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := authorizedKeysLineHasBlob(c.line, keyB); got != c.want {
+				t.Errorf("authorizedKeysLineHasBlob = %v, want %v\nline: %q", got, c.want, c.line)
+			}
+			// 正規 parser の解釈とも一致すること
+			parsed := false
+			if pk, _, _, _, err := ssh.ParseAuthorizedKey([]byte(c.line)); err == nil {
+				parsed = strings.TrimSpace(string(ssh.MarshalAuthorizedKey(pk))) == keyB
+			}
+			if parsed != c.want {
+				t.Errorf("ssh.ParseAuthorizedKey disagrees with expected: got %v, want %v\nline: %q", parsed, c.want, c.line)
+			}
+		})
+	}
+}
+
+// TestBuildDeployScript_DuplicateCheckParsesKeyPosition は生成スクリプトの重複判定が、
+// 行頭の鍵本体 → options 読み飛ばし後の鍵本体、の2か所だけを比較する形になっていることを固定する。
+// 以前の「全トークンをスライドして比較」に戻ると AUD-001 が再発する。
+func TestBuildDeployScript_DuplicateCheckParsesKeyPosition(t *testing.T) {
+	for _, dryRun := range []bool{false, true} {
+		script := buildDeployScript("ssh-ed25519 AAAA user@host", "ssh-ed25519 AAAA", false, dryRun)
+		for _, want := range []string{
+			"if ($parts.Count -ge 2 -and ($parts[0] + ' ' + $parts[1]) -ceq $keyBlob) { $exists = $true; break }",
+			"if (-not $quoted -and ($c -eq [char]32 -or $c -eq [char]9)) { break }",
+			"if ($c -eq [char]92 -and ($j + 1) -lt $t.Length -and $t[$j + 1] -eq [char]34) { $j += 2; continue }",
+			"if ($c -eq [char]34) { $quoted = -not $quoted }",
+			"$rest = $t.Substring($j).Trim()",
+			"if ($restParts.Count -ge 2 -and ($restParts[0] + ' ' + $restParts[1]) -ceq $keyBlob) { $exists = $true; break }",
+		} {
+			if !strings.Contains(script, want) {
+				t.Errorf("dryRun=%v: script should contain %q\n\nscript:\n%s", dryRun, want, script)
+			}
+		}
+		if strings.Contains(script, "$parts[$i+1]") {
+			t.Errorf("dryRun=%v: sliding-window duplicate check must not come back\n\nscript:\n%s", dryRun, script)
+		}
+	}
+}
+
+// newTestPubKeyBlob はランダムな ed25519 公開鍵の "type base64" を返す。
+func newTestPubKeyBlob(t *testing.T) string {
+	t.Helper()
+	pub, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+	pk, err := ssh.NewPublicKey(pub)
+	if err != nil {
+		t.Fatalf("new public key: %v", err)
+	}
+	return strings.TrimSpace(string(ssh.MarshalAuthorizedKey(pk)))
 }
