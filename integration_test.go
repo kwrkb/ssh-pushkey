@@ -10,9 +10,11 @@ import (
 	"testing"
 )
 
-// 実行方法（パスワード手打ち）:
+// 実行方法: 正規の入口は make itest-admin / make itest-user（env ファイルを読み込み -count=1 を付ける）。
+// 生コマンドで実行する場合（パスワード手打ち）:
 //   read -rs SSH_TEST_PASSWORD && export SSH_TEST_PASSWORD
-//   SSH_TEST_HOST=192.168.1.10 SSH_TEST_USER=kiwar go test -tags=integration -v ./...
+//   SSH_TEST_HOST=192.168.1.10 SSH_TEST_USER=kiwar go test -tags=integration -count=1 -v ./...
+// -count=1 が無いと、同じ入力での再実行はキャッシュ済みの PASS を返し実機に接続しない。
 
 type testEnv struct {
 	host     string
