@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Hosts registered in `known_hosts` with an RSA key no longer trigger a false `REMOTE HOST IDENTIFICATION HAS CHANGED` warning when the server has disabled SHA-1 (`ssh-rsa`) signatures and also offers another key type such as ECDSA. The key type `ssh-rsa` from `known_hosts` was passed unchanged as the only allowed host key algorithm, so negotiation failed; the retry without restrictions then picked the ECDSA key, which is not in `known_hosts`, and answering `no` aborted the connection. `ssh-rsa` is now expanded to `rsa-sha2-512`, `rsa-sha2-256` and `ssh-rsa` (RFC 8332 keeps the `ssh-rsa` key format for SHA-2 signatures). A real RSA host key change is still reported and must be confirmed.
+- The duplicate check no longer treats a key as already present when its text only appears in the comment of another key's line, or inside a quoted option such as `command="..."`. Previously the tool reported `Key already exists` and did not add the key, so it could not be used to log in. Only the key position of each line is compared now: the first two fields, or the two fields right after the options (spaces inside quotes are skipped, as OpenSSH does). Keys after options such as `no-pty` or `command="echo a b"` are still detected as duplicates.
+
+### Changed
+
+- Release pipelines now run `govulncheck` before publishing. On GitHub it runs after the tests and before GoReleaser; on GitLab the `vulncheck` job also runs on `v*` tags, so `build` and `release` do not start when it fails. Pull requests and pushes to `master` are not affected. `govulncheck` is pinned to v1.9.0 in both pipelines.
+- The integration test commands in both READMEs and in the header of `integration_test.go` now pass `-count=1`, so a repeated run connects to the host instead of printing a cached `ok`. The READMEs also mention `make itest-admin` / `make itest-user`.
+
 ## [1.9.1] - 2026-10-31
 
 ### Fixed
