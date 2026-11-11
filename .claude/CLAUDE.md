@@ -28,7 +28,7 @@ make itest-all     # admin → user の順で両方
 # 特定テストのみ: make itest-admin RUN=TestIntegration_AdminDetection
 ```
 
-- 依存更新は `go get <mod>@latest && go mod tidy` をセットで実行し、`govulncheck ./...` で到達可能な脆弱性 0 件を確認する（CI では GitLab のスケジュール実行でしか走らない）
+- 依存更新は `go get <mod>@latest && go mod tidy` をセットで実行し、`govulncheck ./...` で到達可能な脆弱性 0 件を確認する（CI では GitLab のスケジュール実行と、両 CI の `v*` タグ時のリリース前ゲートで走る。PR / master push では走らない）
 
 ## Git Workflow
 
@@ -38,8 +38,8 @@ make itest-all     # admin → user の順で両方
 - マージはローカルで `git merge --no-ff <branch>`（件名は `Merge: <要約> (PR #N / MR !M)`）→ `git push origin master && git push gitlab master`。同一履歴が両方に流れ、PR/MR は merged として自動クローズされる
 - プラットフォーム側で個別にマージするとマージコミット SHA が割れる。次回 master push が非 fast-forward で reject されたら `git merge gitlab/master` で reconcile してから両方に push する
 - リリースは両方とも CI/CD で自動化済み:
-  - **GitLab**: `.gitlab-ci.yml`。`test` / `vet` は毎パイプライン、`vulncheck` はスケジュール実行時のみ、`v*` タグで `build`（5 プラットフォーム）→ `release`（CHANGELOG.md からノート抽出）
-  - **GitHub**: `.github/workflows/release.yml` が `v*` タグで GoReleaser（`.goreleaser.yaml`）を実行 → バイナリ付きリリース + Scoop manifest を別リポジトリ `kwrkb/scoop-bucket` へ push（PAT は 1Password から取得）。本文は公開後に CHANGELOG.md 抽出で `gh release edit` する
+  - **GitLab**: `.gitlab-ci.yml`。`test` / `vet` は毎パイプライン、`vulncheck` はスケジュール実行時と `v*` タグ時（失敗すると `build` 以降に進まない）、`v*` タグで `build`（5 プラットフォーム）→ `release`（CHANGELOG.md からノート抽出）
+  - **GitHub**: `.github/workflows/release.yml` が `v*` タグで test → `govulncheck` → GoReleaser（`.goreleaser.yaml`）を実行 → バイナリ付きリリース + Scoop manifest を別リポジトリ `kwrkb/scoop-bucket` へ push（PAT は 1Password から取得）。本文は公開後に CHANGELOG.md 抽出で `gh release edit` する
 - リリース手順: `CHANGELOG.md` 更新 → タグ作成 → 両リモートに push → 両 CI が自動でリリース作成
 - リリース後は `gh api repos/kwrkb/ssh-pushkey/releases/tags/<tag> --jq '(.body|length)'` で本文が入ったか確認する（アセットの有無だけで判断しない）
 - `.goreleaser.yaml` を変えたらマージ前に `goreleaser check` → `goreleaser release --snapshot --clean` でローカル検証する（CI と同じ v2 系を使う）

@@ -23,6 +23,13 @@ jobs:
       - name: Run tests
         run: go test ./...
 
+      # 到達可能な脆弱性があればここで失敗し、GoReleaser（公開）へ進まない。
+      # 通常の CI では回さない（新しい脆弱性 DB の登録で無関係な PR が落ちるため）が、
+      # 配布物を出す直前だけは必ず通す。手動の govulncheck を忘れても配布を止められる。
+      # setup-go が go.mod の版を入れた後に go run するので、解析も同じ Go で行われる。
+      - name: Vulnerability check
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+
       - name: Extract release notes from CHANGELOG
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
