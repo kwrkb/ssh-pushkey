@@ -80,9 +80,14 @@ func backupRemoteKeyFile(t *testing.T, client *ssh.Client, keyFileExpr string) (
 			t.Errorf("failed to restore authorized_keys (manual cleanup may be required, backup id %s): %v", id, err)
 			return
 		}
-		if !hasMarkerLine(out, fixtureMarkerRestored) {
+		switch {
+		case hasMarkerLine(out, fixtureMarkerRestored):
+		case hasMarkerLine(out, fixtureMarkerMissing):
 			t.Errorf("backup for id %s was not found, so authorized_keys was left as is and the lock was kept. "+
 				"Check authorized_keys manually.\noutput:\n%s", id, out)
+		default:
+			t.Errorf("unexpected output while restoring authorized_keys (backup id %s); the restore result is unknown. "+
+				"Check authorized_keys and the .pushkey-test-* files manually.\noutput:\n%s", id, out)
 		}
 	}
 }
@@ -149,6 +154,14 @@ func TestIntegration_DeployKey(t *testing.T) {
 	}
 	defer client.Close()
 
+	// 鍵ファイルを書き換えるテストは、すべて排他付きで退避してから始め、終了時に元へ戻す。
+	target, err := resolveKeyFileTarget(client)
+	if err != nil {
+		t.Fatalf("resolveKeyFileTarget failed: %v", err)
+	}
+	restore := backupRemoteKeyFile(t, client, remoteKeyFileExpr(target.isAdmin))
+	defer restore()
+
 	if err := DeployKey(client, pubKey, false); err != nil {
 		t.Fatalf("key deployment failed: %v", err)
 	}
@@ -176,15 +189,20 @@ func TestIntegration_DuplicateByBlob(t *testing.T) {
 	}
 	defer client.Close()
 
+	target, err := resolveKeyFileTarget(client)
+	if err != nil {
+		t.Fatalf("resolveKeyFileTarget failed: %v", err)
+	}
+	// 鍵の配置から option 行での上書きまで、すべて排他付きの退避の内側で行う。
+	keyFileExpr := remoteKeyFileExpr(target.isAdmin)
+	restore := backupRemoteKeyFile(t, client, keyFileExpr)
+	defer restore()
+
 	// 鍵を配置しておく（既にあれば idempotent にスキップされる）
 	if err := DeployKey(client, pubKey, false); err != nil {
 		t.Fatalf("key deployment failed: %v", err)
 	}
 
-	target, err := resolveKeyFileTarget(client)
-	if err != nil {
-		t.Fatalf("resolveKeyFileTarget failed: %v", err)
-	}
 	blob, err := pubKeyBlob(pubKey)
 	if err != nil {
 		t.Fatalf("pubKeyBlob failed: %v", err)
@@ -211,12 +229,9 @@ func TestIntegration_DuplicateByBlob(t *testing.T) {
 	}
 
 	// options 前置行（command="..." <type> <base64> ...）でも鍵本体を検知できること。
-	// buildDeployScript と同じ式で $keyFile を決め、排他付きで退避 → option 行のみで上書き →
-	// dry-run スキャン → 必ず元へ復元する（残置すると実ホスト上の有効な authorization になるため）。
+	// 冒頭で退避済みなので、option 行のみで上書き → dry-run スキャン → defer で必ず元へ復元する
+	// （残置すると実ホスト上の有効な authorization になるため）。
 	// 平文の鍵行も残すと壊れたスキャナでも True になり判別力が失われるので、敢えて option 行だけにする。
-	keyFileExpr := remoteKeyFileExpr(target.isAdmin)
-	restore := backupRemoteKeyFile(t, client, keyFileExpr)
-	defer restore()
 
 	// command="..." 付きで test 鍵 blob を唯一の行として書き込む（UTF-8 BOM なし、末尾改行付き）。
 	optionLine := `command="echo hi" ` + blob + " injected-with-options"
@@ -326,24 +341,18 @@ func TestIntegration_ReapplyACLOnExistingKey(t *testing.T) {
 	}
 	defer client.Close()
 
-	// 鍵を配置済みの状態にする（既にあれば重複扱い）
-	if err := DeployKey(client, pubKey, false); err != nil {
-		t.Fatalf("key deployment failed: %v", err)
-	}
-
 	target, err := resolveKeyFileTarget(client)
 	if err != nil {
 		t.Fatalf("resolveKeyFileTarget failed: %v", err)
 	}
 
-	// $keyFile / $sshDir の決定は buildDeployScript と同じ式に合わせる。
-	pathExpr := "$keyFile = Join-Path $env:USERPROFILE '.ssh\\authorized_keys'; $sshDir = Join-Path $env:USERPROFILE '.ssh'"
-	if target.isAdmin {
-		pathExpr = "$keyFile = 'C:\\ProgramData\\ssh\\administrators_authorized_keys'; $sshDir = 'C:\\ProgramData\\ssh'"
-	}
+	// $keyFile / $sshDir の決定は buildDeployScript と同じ式に合わせる（$sshDir は $keyFile の親）。
+	keyFileExpr := remoteKeyFileExpr(target.isAdmin)
+	pathExpr := keyFileExpr + "; $sshDir = Split-Path -Parent $keyFile"
 
 	// 後始末: DeployKey が修復できなかった場合でも、ディレクトリと鍵ファイルの継承を外して
 	// 3 SID に戻す（崩れたまま残すと sshd が鍵ファイルを拒否し得る）。
+	// defer は LIFO なので、下で登録する鍵ファイルの復元が先に走り、その後にこの ACL 修復が走る。
 	defer func() {
 		restore := pathExpr + "; $sid = ([System.Security.Principal.WindowsIdentity]::GetCurrent()).User.Value" +
 			"; foreach ($p in @($sshDir, $keyFile)) { icacls $p /inheritance:r /grant '*S-1-5-18:(F)' /grant '*S-1-5-32-544:(F)' /grant \"*${sid}:(F)\" | Out-Null }"
@@ -351,6 +360,15 @@ func TestIntegration_ReapplyACLOnExistingKey(t *testing.T) {
 			t.Errorf("failed to restore ACL (manual cleanup may be required): %v", rerr)
 		}
 	}()
+
+	// 鍵の配置から ACL の破壊・修復まで、すべて排他付きの退避の内側で行う。
+	restore := backupRemoteKeyFile(t, client, keyFileExpr)
+	defer restore()
+
+	// 鍵を配置済みの状態にする（既にあれば重複扱い）
+	if err := DeployKey(client, pubKey, false); err != nil {
+		t.Fatalf("key deployment failed: %v", err)
+	}
 
 	// ACL を崩す: ディレクトリと鍵ファイルの継承を再有効化する
 	if out, err := runRemotePowerShell(client, pathExpr+
@@ -369,8 +387,8 @@ func TestIntegration_ReapplyACLOnExistingKey(t *testing.T) {
 	// 検証は remote 側で完結させ、マーカーだけを返す。継承が外れ（保護フラグ）、継承 ACE が無く、
 	// SYSTEM / Administrators / 実行ユーザーの FullControl が揃っていること。
 	// 3 SID 以外の明示 ACE は数えない。icacls /grant は既存の明示 ACE を消さないため（設計上の範囲外）、
-	// 他テストのバックアップ・復元で作り直したファイルには作成者トークン既定の
-	// LogonSessionId（S-1-5-5-0-*）の読み取り ACE が残る。
+	// 以前の退避・復元方式（Move-Item で退避ファイルに置き換えていた）で作り直したファイルには、
+	// 作成者トークン既定の LogonSessionId（S-1-5-5-0-*）の読み取り ACE が残っていることがある。
 	check := pathExpr + "; $sid = ([System.Security.Principal.WindowsIdentity]::GetCurrent()).User.Value" +
 		"; $allowed = @('S-1-5-18', 'S-1-5-32-544', $sid)" +
 		"; foreach ($e in @(@('DIR', $sshDir), @('FILE', $keyFile))) {" +

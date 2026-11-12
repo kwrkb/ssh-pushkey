@@ -21,10 +21,13 @@ import (
 //
 // 新方式:
 //   - 排他: $keyFile.pushkey-test-lock を CreateNew で作る（既にあれば IOException＝別の実行中か中断の跡。
-//     権限不足などそれ以外の例外はロック中と取り違えず、スクリプトごと失敗させる）
+//     IOException でもロックファイルが実在しないとき（共有違反・パス異常など）や、権限不足などそれ以外の
+//     例外はロック中と取り違えず、スクリプトごと失敗させる）
 //   - 退避名に実行ごとの ID を付け、他の実行の退避には触らない
 //   - 中断の跡（.pushkey-test-* が残っている）があれば何も変えずに止め、手動での確認を求める
 //   - 「元々ファイルが無い」ことは推測せず、.pushkey-test-absent-<id> の目印で記録する
+//   - 復元は退避の「内容」を既存の鍵ファイルへ書き戻す（Move-Item で置き換えない）。置き換えると
+//     Copy-Item で作った退避ファイルの ACL（親から継承＋作成者既定の ACE）が鍵ファイルに残るため
 //   - 復元できたときだけロックを外す。退避も目印も無ければ本体に触らず、ロックも残して次の実行を止める
 
 const (
@@ -74,6 +77,7 @@ if (-not (Test-Path $dir)) { New-Item -ItemType Directory -Path $dir -Force | Ou
 try {
   $fs = [System.IO.File]::Open($lock, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write)
 } catch [System.IO.IOException] {
+  if (-not (Test-Path -LiteralPath $lock)) { throw }
   Write-Output "FIXTURE_LOCKED:$lock"
   exit 0
 }
@@ -111,7 +115,8 @@ func buildFixtureRestoreScript(keyFileExpr, id string) string {
 	return "$ErrorActionPreference = 'Stop'\n" +
 		fixturePathsExpr(keyFileExpr, id) +
 		`if (Test-Path -LiteralPath $bak) {
-  Move-Item -LiteralPath $bak -Destination $keyFile -Force
+  [System.IO.File]::WriteAllBytes($keyFile, [System.IO.File]::ReadAllBytes($bak))
+  Remove-Item -LiteralPath $bak -Force
   Write-Output 'FIXTURE_RESTORED:backup'
 } elseif (Test-Path -LiteralPath $absent) {
   if (Test-Path -LiteralPath $keyFile) { Remove-Item -LiteralPath $keyFile -Force }
@@ -138,6 +143,7 @@ func TestBuildFixtureBackupScript(t *testing.T) {
 		`$absent = "$keyFile.pushkey-test-absent-0123456789abcdef"`,
 		"[System.IO.FileMode]::CreateNew",
 		"catch [System.IO.IOException]",
+		"if (-not (Test-Path -LiteralPath $lock)) { throw }",
 		`Write-Output "FIXTURE_LOCKED:$lock"`,
 		"FIXTURE_LEFTOVER:",
 		"Copy-Item -LiteralPath $keyFile -Destination $bak",
@@ -175,7 +181,8 @@ func TestBuildFixtureRestoreScript(t *testing.T) {
 
 	for _, want := range []string{
 		`$keyFile = Join-Path $env:USERPROFILE '.ssh\authorized_keys'`,
-		"Move-Item -LiteralPath $bak -Destination $keyFile -Force",
+		"[System.IO.File]::WriteAllBytes($keyFile, [System.IO.File]::ReadAllBytes($bak))",
+		"Remove-Item -LiteralPath $bak -Force",
 		"Write-Output 'FIXTURE_RESTORED:backup'",
 		"Write-Output 'FIXTURE_RESTORED:absent'",
 		"Write-Output 'FIXTURE_RESTORE_MISSING'",
@@ -184,6 +191,11 @@ func TestBuildFixtureRestoreScript(t *testing.T) {
 		if !strings.Contains(script, want) {
 			t.Errorf("restore script should contain %q\n\nscript:\n%s", want, script)
 		}
+	}
+
+	// 退避ファイルで鍵ファイルを置き換えないこと（置き換えると退避ファイルの ACL が鍵ファイルに残る）。
+	if strings.Contains(script, "Move-Item") {
+		t.Errorf("restore must write the backup contents into the key file, not move the backup over it\n\nscript:\n%s", script)
 	}
 
 	// 本体の削除は「元々無かった」目印がある分岐の中だけにあること。
