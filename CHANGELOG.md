@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - Release pipelines now run `govulncheck` before publishing. On GitHub it runs after the tests and before GoReleaser; on GitLab the `vulncheck` job also runs on `v*` tags, so `build` and `release` do not start when it fails. Pull requests and pushes to `master` are not affected. `govulncheck` is pinned to v1.9.0 in both pipelines.
 - The integration test commands in both READMEs and in the header of `integration_test.go` now pass `-count=1`, so a repeated run connects to the host instead of printing a cached `ok`. The READMEs also mention `make itest-admin` / `make itest-user`.
+- Integration tests that temporarily rewrite `authorized_keys` on the test host no longer risk losing the original keys. Previously they used one fixed backup name: a second run against the same account (or the shared `administrators_authorized_keys`) could delete and replace the first run's backup, and a run that found no backup deleted the key file. A run also deleted a backup left by an interrupted run. Now a lock file keeps runs from overlapping, each run uses its own backup name, a missing original file is recorded explicitly instead of being inferred, and files left by an interrupted run stop the test without changing anything.
 
 ## [1.9.1] - 2026-10-31
 

@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"golang.org/x/crypto/ssh"
 )
 
 // 実行方法: 正規の入口は make itest-admin / make itest-user（env ファイルを読み込み -count=1 を付ける）。
@@ -44,6 +46,45 @@ func loadTestEnv(t *testing.T) testEnv {
 	}
 
 	return testEnv{host: host, port: port, user: user, password: password}
+}
+
+// backupRemoteKeyFile はリモートの authorized_keys を排他付きで退避し、復元関数を返す。
+// 呼び出し側は defer client.Close() より後で defer restore() すること（LIFO で接続が先に閉じないように）。
+// 別の実行がロック中、または中断の跡（退避ファイルやロック）が残っている場合は何も変えずに t.Fatalf する。
+// 退避・復元は remote PowerShell 内で完結させ、ファイル内容を Go 側へ吸い上げない
+// （runRemotePowerShell の出力には CLIXML 初期化ノイズが混ざるため）。詳細は integration_fixture_test.go。
+func backupRemoteKeyFile(t *testing.T, client *ssh.Client, keyFileExpr string) (restore func()) {
+	t.Helper()
+	id := newFixtureID(t)
+
+	out, err := runRemotePowerShell(client, buildFixtureBackupScript(keyFileExpr, id))
+	if err != nil {
+		t.Fatalf("failed to back up authorized_keys: %v", err)
+	}
+	switch {
+	case hasMarkerLine(out, fixtureMarkerLocked):
+		t.Fatalf("another integration run holds %s, or a previous run was interrupted. "+
+			"Make sure no other run is active, check that authorized_keys is intact, then delete the lock file.\noutput:\n%s",
+			markerValue(out, fixtureMarkerLocked), out)
+	case hasMarkerLine(out, fixtureMarkerLeftover):
+		t.Fatalf("leftover files from an interrupted run were found next to authorized_keys: %s. "+
+			"They may hold the original keys. Restore or delete them manually before re-running; nothing was changed.\noutput:\n%s",
+			markerValue(out, fixtureMarkerLeftover), out)
+	case !hasMarkerLine(out, fixtureMarkerReady):
+		t.Fatalf("unexpected output while backing up authorized_keys\noutput:\n%s", out)
+	}
+
+	return func() {
+		out, err := runRemotePowerShell(client, buildFixtureRestoreScript(keyFileExpr, id))
+		if err != nil {
+			t.Errorf("failed to restore authorized_keys (manual cleanup may be required, backup id %s): %v", id, err)
+			return
+		}
+		if !hasMarkerLine(out, fixtureMarkerRestored) {
+			t.Errorf("backup for id %s was not found, so authorized_keys was left as is and the lock was kept. "+
+				"Check authorized_keys manually.\noutput:\n%s", id, out)
+		}
+	}
 }
 
 func TestIntegration_SSHConnect(t *testing.T) {
@@ -170,33 +211,12 @@ func TestIntegration_DuplicateByBlob(t *testing.T) {
 	}
 
 	// options 前置行（command="..." <type> <base64> ...）でも鍵本体を検知できること。
-	// buildDeployScript と同じ式で $keyFile を決め、remote 側でバックアップ → option 行のみで上書き →
+	// buildDeployScript と同じ式で $keyFile を決め、排他付きで退避 → option 行のみで上書き →
 	// dry-run スキャン → 必ず元へ復元する（残置すると実ホスト上の有効な authorization になるため）。
 	// 平文の鍵行も残すと壊れたスキャナでも True になり判別力が失われるので、敢えて option 行だけにする。
-	// バックアップ／復元は remote PowerShell 内で完結させ、ファイル内容を Go 側へ吸い上げない
-	// （runRemotePowerShell の出力には CLIXML 初期化ノイズが混ざり base64 を汚染するため）。
-	keyFileExpr := "$keyFile = Join-Path $env:USERPROFILE '.ssh\\authorized_keys'"
-	if target.isAdmin {
-		keyFileExpr = "$keyFile = 'C:\\ProgramData\\ssh\\administrators_authorized_keys'"
-	}
-	bakExpr := keyFileExpr + "; $bak = \"$keyFile.pushkey-test-bak\""
-
-	// バックアップ（既存 bak は除去してから、元ファイルがあればコピー）。
-	if _, err := runRemotePowerShell(client, bakExpr+
-		"; if (Test-Path $bak) { Remove-Item -Force $bak }"+
-		"; if (Test-Path $keyFile) { Copy-Item $keyFile $bak }"); err != nil {
-		t.Fatalf("failed to back up authorized_keys: %v", err)
-	}
-
-	defer func() {
-		// 復元: bak があれば戻す（move なので bak も消える）。無ければ元々ファイル無しなので option 行ファイルを削除。
-		restore := bakExpr +
-			"; if (Test-Path $bak) { Move-Item -Force $bak $keyFile } " +
-			"else { if (Test-Path $keyFile) { Remove-Item -Force $keyFile } }"
-		if _, rerr := runRemotePowerShell(client, restore); rerr != nil {
-			t.Errorf("failed to restore authorized_keys (manual cleanup may be required): %v", rerr)
-		}
-	}()
+	keyFileExpr := remoteKeyFileExpr(target.isAdmin)
+	restore := backupRemoteKeyFile(t, client, keyFileExpr)
+	defer restore()
 
 	// command="..." 付きで test 鍵 blob を唯一の行として書き込む（UTF-8 BOM なし、末尾改行付き）。
 	optionLine := `command="echo hi" ` + blob + " injected-with-options"
@@ -243,31 +263,11 @@ func TestIntegration_AppendToFileWithoutTrailingNewline(t *testing.T) {
 		t.Fatalf("resolveKeyFileTarget failed: %v", err)
 	}
 
-	// $keyFile の決定は buildDeployScript と同じ式に合わせる。
-	keyFileExpr := "$keyFile = Join-Path $env:USERPROFILE '.ssh\\authorized_keys'"
-	if target.isAdmin {
-		keyFileExpr = "$keyFile = 'C:\\ProgramData\\ssh\\administrators_authorized_keys'"
-	}
-	bakExpr := keyFileExpr + "; $bak = \"$keyFile.pushkey-test-bak\""
-
-	// バックアップ（既存 bak は除去 → 元ファイルがあればコピー）。.ssh ディレクトリが無いと
-	// WriteAllText が失敗するため作成しておく。
-	if _, err := runRemotePowerShell(client, bakExpr+
-		"; $d = Split-Path -Parent $keyFile; if (-not (Test-Path $d)) { New-Item -ItemType Directory -Path $d -Force | Out-Null }"+
-		"; if (Test-Path $bak) { Remove-Item -Force $bak }"+
-		"; if (Test-Path $keyFile) { Copy-Item $keyFile $bak }"); err != nil {
-		t.Fatalf("failed to back up authorized_keys: %v", err)
-	}
-
-	defer func() {
-		// 復元: bak があれば戻す。無ければ元々ファイル無しなのでテスト生成ファイルを削除。
-		restore := bakExpr +
-			"; if (Test-Path $bak) { Move-Item -Force $bak $keyFile } " +
-			"else { if (Test-Path $keyFile) { Remove-Item -Force $keyFile } }"
-		if _, rerr := runRemotePowerShell(client, restore); rerr != nil {
-			t.Errorf("failed to restore authorized_keys (manual cleanup may be required): %v", rerr)
-		}
-	}()
+	// $keyFile の決定は buildDeployScript と同じ式に合わせる。退避は排他付き
+	// （.ssh ディレクトリが無ければ退避スクリプトが作る。WriteAllText はディレクトリが無いと失敗する）。
+	keyFileExpr := remoteKeyFileExpr(target.isAdmin)
+	restore := backupRemoteKeyFile(t, client, keyFileExpr)
+	defer restore()
 
 	// 配置する鍵とは別 blob の既存行を、末尾改行なし（核心条件）で書き込む。
 	// 別 blob なので DeployKey は重複と判定せず必ず追記する。
