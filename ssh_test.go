@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"golang.org/x/crypto/ssh/knownhosts"
@@ -303,8 +304,29 @@ func TestHostKeyAlgorithmsFromKnownHosts(t *testing.T) {
 	t.Run("wildcard and exact entries are combined", func(t *testing.T) {
 		path := write(t, "192.168.1.* "+edKey+"\n192.168.1.10 "+rsaKey+"\n")
 		got := hostKeyAlgorithmsFromKnownHosts(path, "192.168.1.10")
-		if len(got) != 2 || got[0] != "ssh-ed25519" || got[1] != "ssh-rsa" {
-			t.Errorf("got %v, want [ssh-ed25519 ssh-rsa]", got)
+		want := []string{"ssh-ed25519", "rsa-sha2-512", "rsa-sha2-256", "ssh-rsa"}
+		if !slices.Equal(got, want) {
+			t.Errorf("got %v, want %v", got, want)
+		}
+	})
+
+	t.Run("ssh-rsa key type expands to SHA-2 signature algorithms", func(t *testing.T) {
+		// RFC 8332 §3: rsa-sha2-* でも公開鍵形式は ssh-rsa。SHA-1 を無効にしたサーバと
+		// 交渉できるよう SHA-2 を優先し、古いサーバ向けに ssh-rsa も残す。
+		path := write(t, "192.168.1.10 "+rsaKey+"\n")
+		got := hostKeyAlgorithmsFromKnownHosts(path, "192.168.1.10")
+		want := []string{"rsa-sha2-512", "rsa-sha2-256", "ssh-rsa"}
+		if !slices.Equal(got, want) {
+			t.Errorf("got %v, want %v", got, want)
+		}
+	})
+
+	t.Run("duplicate key types are deduplicated", func(t *testing.T) {
+		path := write(t, "192.168.1.* "+rsaKey+"\n192.168.1.10 "+rsaKey+"\n192.168.1.10 "+edKey+"\n")
+		got := hostKeyAlgorithmsFromKnownHosts(path, "192.168.1.10")
+		want := []string{"rsa-sha2-512", "rsa-sha2-256", "ssh-rsa", "ssh-ed25519"}
+		if !slices.Equal(got, want) {
+			t.Errorf("got %v, want %v", got, want)
 		}
 	})
 
@@ -370,7 +392,7 @@ func TestHostKeyAlgorithmsFromKnownHosts_IPv6(t *testing.T) {
 	if got := hostKeyAlgorithmsFromKnownHosts(path, knownhosts.Normalize(sshAddr("::1", 22))); len(got) != 1 || got[0] != "ssh-ed25519" {
 		t.Errorf("port 22: got %v, want [ssh-ed25519]", got)
 	}
-	if got := hostKeyAlgorithmsFromKnownHosts(path, knownhosts.Normalize(sshAddr("::1", 2222))); len(got) != 1 || got[0] != "ssh-rsa" {
-		t.Errorf("port 2222: got %v, want [ssh-rsa]", got)
+	if got := hostKeyAlgorithmsFromKnownHosts(path, knownhosts.Normalize(sshAddr("::1", 2222))); !slices.Equal(got, []string{"rsa-sha2-512", "rsa-sha2-256", "ssh-rsa"}) {
+		t.Errorf("port 2222: got %v, want [rsa-sha2-512 rsa-sha2-256 ssh-rsa]", got)
 	}
 }

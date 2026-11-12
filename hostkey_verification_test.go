@@ -1,7 +1,9 @@
 package main
 
 import (
+	"crypto/ecdsa"
 	"crypto/ed25519"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/base64"
@@ -55,6 +57,36 @@ func generateRSAHostKey(t *testing.T) ssh.Signer {
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		t.Fatalf("generate rsa key: %v", err)
+	}
+	signer, err := ssh.NewSignerFromKey(key)
+	if err != nil {
+		t.Fatalf("new signer: %v", err)
+	}
+	return signer
+}
+
+// generateRSASHA2OnlyHostKey は SHA-2 署名（rsa-sha2-512 / rsa-sha2-256）しか出さない
+// RSA ホスト鍵を返す。ssh-rsa（SHA-1）署名を無効化した現行 OpenSSH サーバの再現に使う。
+// 公開鍵形式は ssh-rsa のままなので known_hosts の行は通常の RSA 鍵と同じになる。
+func generateRSASHA2OnlyHostKey(t *testing.T) ssh.Signer {
+	t.Helper()
+	algSigner, ok := generateRSAHostKey(t).(ssh.AlgorithmSigner)
+	if !ok {
+		t.Fatalf("rsa signer does not implement AlgorithmSigner")
+	}
+	signer, err := ssh.NewSignerWithAlgorithms(algSigner, []string{ssh.KeyAlgoRSASHA512, ssh.KeyAlgoRSASHA256})
+	if err != nil {
+		t.Fatalf("restrict rsa signer to sha2: %v", err)
+	}
+	return signer
+}
+
+// generateECDSAHostKey はテスト用の ECDSA P-256 ホスト鍵を生成する。
+func generateECDSAHostKey(t *testing.T) ssh.Signer {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatalf("generate ecdsa key: %v", err)
 	}
 	signer, err := ssh.NewSignerFromKey(key)
 	if err != nil {
@@ -519,4 +551,61 @@ func TestHostKeyVerification_IPv6_TOFUAcceptThenNoFalsePositive(t *testing.T) {
 		t.Fatalf("second connect to a now-known IPv6 host should succeed without prompting: %v", err)
 	}
 	client2.Close()
+}
+
+// TestHostKeyVerification_RSASHA2Only_NoFalseMitm は、known_hosts に RSA 鍵だけが登録され、
+// サーバがその RSA 鍵を SHA-2 署名（rsa-sha2-512/256）でのみ提供しつつ ECDSA 鍵も持つ場合に、
+// 誤った鍵変更警告を出さずに接続できることを検証する（Issue #33 AUD-002）。
+//
+// 回帰の中身: known_hosts の鍵形式 "ssh-rsa" をそのまま HostKeyAlgorithms に入れていたため、
+// SHA-1 署名を無効にしたサーバとは "no common algorithm" で交渉が落ちていた。dialSSH は
+// 制限を全解除して再試行するので ECDSA が選ばれ、known_hosts の RSA と違う＝鍵変更として
+// REMOTE HOST IDENTIFICATION HAS CHANGED を表示していた。RFC 8332 §3 のとおり
+// rsa-sha2-* でも公開鍵形式は ssh-rsa なので、ssh-rsa は SHA-2 署名方式へ展開して交渉する必要がある。
+func TestHostKeyVerification_RSASHA2Only_NoFalseMitm(t *testing.T) {
+	rsaKey := generateRSASHA2OnlyHostKey(t)
+	port := startTestSSHServer(t, rsaKey, generateECDSAHostKey(t))
+
+	knownHostsPath := tempHome(t)
+	seedKnownHost(t, knownHostsPath, normalizedAddr(port), rsaKey.PublicKey(), false)
+	before, err := os.ReadFile(knownHostsPath)
+	if err != nil {
+		t.Fatalf("read known_hosts: %v", err)
+	}
+
+	failIfPrompted(t)
+
+	client, err := dialSSH(testSSHUser, "127.0.0.1", port, testSSHPassword, false)
+	if err != nil {
+		t.Fatalf("dialSSH to a known RSA (SHA-2 only) host failed: %v", err)
+	}
+	defer client.Close()
+
+	after, err := os.ReadFile(knownHostsPath)
+	if err != nil {
+		t.Fatalf("read known_hosts: %v", err)
+	}
+	if string(after) != string(before) {
+		t.Errorf("known_hosts was modified\n got: %q\nwant: %q", string(after), string(before))
+	}
+}
+
+// TestHostKeyVerification_RSASHA2Only_RealChangeStillRejected は、SHA-2 展開を入れても
+// 本当に RSA 鍵が変わった場合は従来どおり警告・確認を求め、拒否すれば接続が失敗することを検証する。
+func TestHostKeyVerification_RSASHA2Only_RealChangeStillRejected(t *testing.T) {
+	port := startTestSSHServer(t, generateRSASHA2OnlyHostKey(t), generateECDSAHostKey(t))
+
+	knownHostsPath := tempHome(t)
+	// known_hosts には別の RSA 鍵が登録されている
+	seedKnownHost(t, knownHostsPath, normalizedAddr(port), generateRSAHostKey(t).PublicKey(), false)
+
+	promptCount := overridePrompt(t, "no")
+
+	if client, err := dialSSH(testSSHUser, "127.0.0.1", port, testSSHPassword, false); err == nil {
+		client.Close()
+		t.Fatalf("dialSSH must fail when the RSA host key really changed and the user answered no")
+	}
+	if *promptCount != 1 {
+		t.Errorf("prompt count = %d, want 1", *promptCount)
+	}
 }

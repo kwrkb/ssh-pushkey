@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -349,10 +350,34 @@ func hostKeyAlgorithmsFromKnownHosts(knownHostsPath string, addr string) []strin
 			continue
 		}
 		if knownHostsLineMatchesAddr(fields[0], addr) {
-			algorithms = append(algorithms, fields[1])
+			for _, algo := range hostKeyAlgorithmsForKeyType(fields[1]) {
+				if !slices.Contains(algorithms, algo) {
+					algorithms = append(algorithms, algo)
+				}
+			}
 		}
 	}
 	return algorithms
+}
+
+// hostKeyAlgorithmsForKeyType は known_hosts に書かれた公開鍵形式を、交渉に使う
+// ホスト鍵署名アルゴリズムの一覧へ展開する。
+//
+// RSA だけは公開鍵形式と署名アルゴリズムが一致しない。RFC 8332 §3 により rsa-sha2-512 /
+// rsa-sha2-256 で署名する場合も公開鍵形式は "ssh-rsa" のまま記録される。"ssh-rsa" を
+// そのまま HostKeyAlgorithms に入れると SHA-1 署名しか要求しないことになり、SHA-1 を
+// 無効にしたサーバとは交渉が失敗する。dialSSH は失敗時に制限を外して再試行するため
+// known_hosts に無い種別（ECDSA 等）が選ばれ、変わっていないホストで鍵変更警告が出ていた。
+// OpenSSH と同じく SHA-2 を優先し、古いサーバ向けに ssh-rsa も残す。
+func hostKeyAlgorithmsForKeyType(keyType string) []string {
+	switch keyType {
+	case ssh.KeyAlgoRSA:
+		return []string{ssh.KeyAlgoRSASHA512, ssh.KeyAlgoRSASHA256, ssh.KeyAlgoRSA}
+	case ssh.CertAlgoRSAv01:
+		return []string{ssh.CertAlgoRSASHA512v01, ssh.CertAlgoRSASHA256v01, ssh.CertAlgoRSAv01}
+	default:
+		return []string{keyType}
+	}
 }
 
 // replaceHostKeyInKnownHosts はknown_hostsファイルから指定ホストの古いエントリを除去し、

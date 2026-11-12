@@ -153,8 +153,10 @@ go test ./...
 
 3. 実行:
    ```bash
-   source .env.integration && go test -tags=integration -v ./...
+   source .env.integration && go test -tags=integration -count=1 -v ./...
    ```
+
+   `-count=1` でテストキャッシュを無効にする。付けないと、同じソースと環境変数で再実行したときにホストへ接続しないままキャッシュ済みの `ok` が表示され、Windows 側（ACL や `sshd_config`）の変更を確かめられない。`make itest-admin` / `make itest-user` は env ファイルを読み込み、`-count=1` も付けて実行する。
 
 **環境変数:**
 

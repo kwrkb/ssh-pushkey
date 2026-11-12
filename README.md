@@ -157,8 +157,10 @@ Integration tests connect to a real Windows OpenSSH server. They are gated behin
 
 3. Run:
    ```bash
-   source .env.integration && go test -tags=integration -v ./...
+   source .env.integration && go test -tags=integration -count=1 -v ./...
    ```
+
+   `-count=1` disables the test cache. Without it, re-running with the same source and environment prints a cached `ok` without connecting to the host, so changes on the Windows side (ACLs, `sshd_config`) are not re-checked. `make itest-admin` / `make itest-user` load the env file and pass `-count=1` for you.
 
 **Environment variables:**
 

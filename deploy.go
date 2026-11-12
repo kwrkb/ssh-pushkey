@@ -36,20 +36,37 @@ func buildDeployScript(pubKey, keyBlob string, isAdmin bool, dryRun bool) string
 	// 重複チェック（読み取りのみ。dry-run でも本番でも先に評価する）。
 	// 鍵 blob（type + base64）のみで比較し、コメント差異があっても同一鍵を検知する。
 	// base64 は大小区別が必要なため -ceq（case-sensitive）で比較する。
-	// 各行のトークンを2つずつスライドさせて keyBlob と一致するか見るため、options 前置行
-	// （command="..." ssh-rsa AAAA...）でも鍵本体の (type, base64) ペアを正しく検知できる。
-	sb.WriteString("$exists = $false\n")
-	sb.WriteString("if (Test-Path $keyFile) {\n")
-	sb.WriteString("  foreach ($line in (Get-Content $keyFile)) {\n")
-	sb.WriteString("    $t = $line.Trim()\n")
-	sb.WriteString("    if ($t -eq '' -or $t.StartsWith('#')) { continue }\n")
-	sb.WriteString("    $parts = $t -split '\\s+'\n")
-	sb.WriteString("    for ($i = 0; $i -lt $parts.Count - 1; $i++) {\n")
-	sb.WriteString("      if (($parts[$i] + ' ' + $parts[$i+1]) -ceq $keyBlob) { $exists = $true; break }\n")
-	sb.WriteString("    }\n")
-	sb.WriteString("    if ($exists) { break }\n")
-	sb.WriteString("  }\n")
-	sb.WriteString("}\n")
+	//
+	// 比較するのは各行の「鍵本体」の位置だけにする（OpenSSH の authorized_keys 解析と同じ）。
+	//   1. 行頭の2トークンが鍵ならそれが鍵本体（options なし）
+	//   2. そうでなければ先頭を options とみなし、sshkey_advance_past_options と同じく
+	//      引用符内の空白と \" を読み飛ばしてから、続く2トークンを鍵本体とする
+	// 以前は行内の全トークンを2つずつスライドさせて比較していたため、別の鍵の行のコメントや
+	// 引用 options（command="..."）の中に対象鍵の文字列があるだけで「既存」と誤判定し、
+	// 鍵を配置しないまま成功扱いにしていた（Issue #33 AUD-001）。
+	// 区切り文字のタブは [char]9 で書く（Go の raw string に PowerShell のバッククォートを置けないため）。
+	sb.WriteString(`$exists = $false
+if (Test-Path $keyFile) {
+  foreach ($line in (Get-Content $keyFile)) {
+    $t = $line.Trim()
+    if ($t -eq '' -or $t.StartsWith('#')) { continue }
+    $parts = $t -split '\s+'
+    if ($parts.Count -ge 2 -and ($parts[0] + ' ' + $parts[1]) -ceq $keyBlob) { $exists = $true; break }
+    $quoted = $false
+    $j = 0
+    while ($j -lt $t.Length) {
+      $c = $t[$j]
+      if (-not $quoted -and ($c -eq [char]32 -or $c -eq [char]9)) { break }
+      if ($c -eq [char]92 -and ($j + 1) -lt $t.Length -and $t[$j + 1] -eq [char]34) { $j += 2; continue }
+      if ($c -eq [char]34) { $quoted = -not $quoted }
+      $j++
+    }
+    $rest = $t.Substring($j).Trim()
+    $restParts = $rest -split '\s+'
+    if ($restParts.Count -ge 2 -and ($restParts[0] + ' ' + $restParts[1]) -ceq $keyBlob) { $exists = $true; break }
+  }
+}
+`)
 
 	// dry-run: 配置先と重複状態だけを報告して終了（書き込み・ディレクトリ作成なし）
 	sb.WriteString("if ($dryRun) {\n")
