@@ -169,6 +169,7 @@ Integration tests connect to a real Windows OpenSSH server. They are gated behin
 | `SSH_TEST_HOST` | Yes | Windows SSH server IP or hostname |
 | `SSH_TEST_USER` | Yes | SSH username |
 | `SSH_TEST_PASSWORD` | Yes | SSH password (use `read -rs` to set) |
+| `SSH_TEST_EXPECT_KEYFILE` | Yes | Key file that sshd on the test host uses for this account: `admin` (`administrators_authorized_keys`) or `user` (`%USERPROFILE%\.ssh\authorized_keys`). The tests compare the tool's own decision against this value, so set it from the host's `sshd_config`, not from what the tool reports |
 | `SSH_TEST_PORT` | No | SSH port (default: 22) |
 | `SSH_TEST_PUBKEY` | No | Path to public key (default: `~/.ssh/id_ed25519.pub`) |
 

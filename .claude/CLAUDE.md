@@ -52,7 +52,8 @@ make itest-all     # admin → user の順で両方
 - 統合テスト: build tag `integration` で分離。認証情報は 2 つの env ファイルから読む（いずれも gitignore 済み、Makefile が自動ロードするので手動 `source` 不要）:
   - `.env.integration` — 管理者アカウント（例: `pushadmin`）
   - `.env.integration.user` — 一般アカウント（例: `pushuser`）
-  - 各ファイルは `export SSH_TEST_HOST=... / SSH_TEST_USER=... / SSH_TEST_PASSWORD=...` を定義
+  - 各ファイルは `export SSH_TEST_HOST=... / SSH_TEST_USER=... / SSH_TEST_PASSWORD=... / SSH_TEST_EXPECT_KEYFILE=admin|user` を定義
+  - `SSH_TEST_EXPECT_KEYFILE` は配置先の期待値。テスト対象（`resolveKeyFileTarget`）の判定から決めず、ホストの `sshd_config` から決める。未設定だと配置先を照合するテストが失敗する
   - 値に 1Password の `op://<vault>/<item>/<field>` 参照を書ける。その場合 Makefile は `source` ではなく `op run --env-file` に委譲して解決する（`op` CLI とサインインが必要）
 - PR 前は `make check` を必ず実行（build + vet + test + integration テストのコンパイル検査で build tag 付きファイルの崩れを検知。`go build` は `_test.go` をコンパイルしないので使わない）
 

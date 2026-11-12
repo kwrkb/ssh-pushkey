@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Integration tests now check that a deployed key actually works and that the key file was chosen correctly. `TestIntegration_KeyAuthAfterDeploy` generates a one-time ed25519 key in memory, confirms the host rejects it, deploys it, and then logs in again using only that key. Previously every integration test logged in with the password, and the tests that inspect the key file picked the file from the same decision they were meant to check, so a key written to a file sshd does not read still passed. The new required variable `SSH_TEST_EXPECT_KEYFILE` (`admin` or `user`) states which file sshd uses for the test account; `TestIntegration_AdminDetection` and the new test fail when the tool's decision differs from it, or when the variable is not set.
+
 ### Fixed
 
 - Hosts registered in `known_hosts` with an RSA key no longer trigger a false `REMOTE HOST IDENTIFICATION HAS CHANGED` warning when the server has disabled SHA-1 (`ssh-rsa`) signatures and also offers another key type such as ECDSA. The key type `ssh-rsa` from `known_hosts` was passed unchanged as the only allowed host key algorithm, so negotiation failed; the retry without restrictions then picked the ECDSA key, which is not in `known_hosts`, and answering `no` aborted the connection. `ssh-rsa` is now expanded to `rsa-sha2-512`, `rsa-sha2-256` and `ssh-rsa` (RFC 8332 keeps the `ssh-rsa` key format for SHA-2 signatures). A real RSA host key change is still reported and must be confirmed.
