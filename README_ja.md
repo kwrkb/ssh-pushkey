@@ -165,6 +165,7 @@ go test ./...
 | `SSH_TEST_HOST` | Yes | Windows SSH サーバーの IP またはホスト名 |
 | `SSH_TEST_USER` | Yes | SSH ユーザー名 |
 | `SSH_TEST_PASSWORD` | Yes | SSH パスワード（`read -rs` で設定推奨） |
+| `SSH_TEST_EXPECT_KEYFILE` | Yes | テストホストの sshd がこのアカウントに使う鍵ファイル。`admin`（`administrators_authorized_keys`）か `user`（`%USERPROFILE%\.ssh\authorized_keys`）。ツール自身の判定をこの値と照合するので、ツールの出力ではなくホストの `sshd_config` から決める |
 | `SSH_TEST_PORT` | No | SSH ポート（デフォルト: 22） |
 | `SSH_TEST_PUBKEY` | No | 公開鍵パス（デフォルト: `~/.ssh/id_ed25519.pub`） |
 

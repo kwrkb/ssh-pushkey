@@ -3,11 +3,15 @@
 package main
 
 import (
+	"crypto/ed25519"
+	"crypto/rand"
 	"fmt"
+	"net"
 	"os"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -46,6 +50,68 @@ func loadTestEnv(t *testing.T) testEnv {
 	}
 
 	return testEnv{host: host, port: port, user: user, password: password}
+}
+
+// expectAdminKeyFile は SSH_TEST_EXPECT_KEYFILE（admin / user）から、このアカウントで期待する
+// 配置先を返す。期待値はテスト対象（resolveKeyFileTarget）の外から与える必要がある。
+// 同じ判定結果からファイルを選んで検証すると、判定が誤っていても検証が成功してしまうため（Issue #33 AUD-005）。
+// 未設定は Skip ではなく Fatal にする（未設定のまま緑になると、どちらの判定でも通る元の状態に戻る）。
+func expectAdminKeyFile(t *testing.T) bool {
+	t.Helper()
+	switch v := os.Getenv("SSH_TEST_EXPECT_KEYFILE"); v {
+	case "admin":
+		return true
+	case "user":
+		return false
+	case "":
+		t.Fatalf("SSH_TEST_EXPECT_KEYFILE is required: set it to admin (administrators_authorized_keys) or " +
+			"user (%%USERPROFILE%%\\.ssh\\authorized_keys) in the env file, according to how sshd on the test host is configured for this account")
+	default:
+		t.Fatalf("SSH_TEST_EXPECT_KEYFILE must be admin or user, got %q", v)
+	}
+	return false
+}
+
+// resolveExpectedTarget は配置先を判定し、SSH_TEST_EXPECT_KEYFILE と一致することを確かめてから返す。
+// 鍵ファイルを読み書きするテストは、配置先をすべてこの関数から得る。一致しなければ鍵ファイルに触る前に止まり、
+// 一致した場合だけ返すので、以降のファイル検証の対象は期待値と同じファイルになる。
+func resolveExpectedTarget(t *testing.T, client *ssh.Client) keyFileTarget {
+	t.Helper()
+	want := expectAdminKeyFile(t)
+	target, err := resolveKeyFileTarget(client)
+	if err != nil {
+		t.Fatalf("resolveKeyFileTarget failed: %v", err)
+	}
+	t.Logf("expected isAdmin=%v, resolved target = %+v", want, target)
+	if target.isAdmin != want {
+		t.Fatalf("resolveKeyFileTarget chose isAdmin=%v (%s), but SSH_TEST_EXPECT_KEYFILE expects isAdmin=%v",
+			target.isAdmin, target.reason, want)
+	}
+	return target
+}
+
+// sessionUserName は SSH_TEST_USER から、$env:USERNAME と比べられる素のアカウント名を取り出す
+// （`HOST\user` や `user@domain` の形でもログインできるため）。
+func sessionUserName(user string) string {
+	if i := strings.LastIndex(user, `\`); i >= 0 {
+		user = user[i+1:]
+	}
+	if i := strings.Index(user, "@"); i >= 0 {
+		user = user[:i]
+	}
+	return user
+}
+
+// dialKeyOnly は公開鍵認証だけで接続する（パスワードには戻らない）。配置した鍵が sshd に
+// 実際に受け入れられるかを確かめるため。
+func dialKeyOnly(env testEnv, signer ssh.Signer) (*ssh.Client, error) {
+	cfg := &ssh.ClientConfig{
+		User:            env.user,
+		Auth:            []ssh.AuthMethod{ssh.PublicKeys(signer)},
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		Timeout:         15 * time.Second,
+	}
+	return ssh.Dial("tcp", net.JoinHostPort(env.host, strconv.Itoa(env.port)), cfg)
 }
 
 // backupRemoteKeyFile はリモートの authorized_keys を排他付きで退避し、復元関数を返す。
@@ -132,12 +198,72 @@ func TestIntegration_AdminDetection(t *testing.T) {
 	}
 	defer client.Close()
 
-	// パニックせず結果を返すことを確認（isAdmin True/False どちらでもOK）
-	target, err := resolveKeyFileTarget(client)
+	// 判定結果は、テスト対象の外から与えた期待値（SSH_TEST_EXPECT_KEYFILE）と照合する。
+	resolveExpectedTarget(t, client)
+}
+
+// TestIntegration_KeyAuthAfterDeploy は、配置した鍵で実際にログインできることを確かめる。
+// 配置先の判定は期待値と照合するが、期待値そのものが sshd の実際の設定とずれていても、ファイルの
+// 中身を見る検証は通ってしまう。sshd による公開鍵認証の成否は、判定とも期待値とも独立した
+// 検証になる（Issue #33 AUD-005）。
+//
+// 鍵はテストごとにメモリ上で生成し、秘密鍵はディスクに書かない。復元に失敗して公開鍵の行が
+// 残っても、対応する秘密鍵はどこにも無いので何も認可しない。
+func TestIntegration_KeyAuthAfterDeploy(t *testing.T) {
+	env := loadTestEnv(t)
+
+	client, err := dialSSH(env.user, env.host, env.port, env.password, true)
 	if err != nil {
-		t.Fatalf("resolveKeyFileTarget failed: %v", err)
+		t.Fatalf("SSH connection failed: %v", err)
 	}
-	t.Logf("target = %+v", target)
+	defer client.Close()
+
+	// 期待する配置先と一致しなければ、鍵ファイルに触る前に止まる。
+	target := resolveExpectedTarget(t, client)
+
+	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("generate ephemeral key: %v", err)
+	}
+	signer, err := ssh.NewSignerFromKey(priv)
+	if err != nil {
+		t.Fatalf("create signer: %v", err)
+	}
+	pubLine := strings.TrimSpace(string(ssh.MarshalAuthorizedKey(signer.PublicKey()))) + " ssh-pushkey-itest-ephemeral"
+
+	restore := backupRemoteKeyFile(t, client, remoteKeyFileExpr(target.isAdmin))
+	defer restore()
+
+	// 対照: 配置前はこの鍵で認証できないこと。接続断などを拒否と取り違えないよう、
+	// 認証の拒否であることまで確かめる。sshd が publickey を提示しない設定（PubkeyAuthentication no や
+	// AuthenticationMethods の制限）では試行方法に publickey が載らないので、ここで区別して止める。
+	if c, err := dialKeyOnly(env, signer); err == nil {
+		c.Close()
+		t.Fatalf("precondition: the ephemeral key must not be accepted before deployment")
+	} else if !strings.Contains(err.Error(), "unable to authenticate") {
+		t.Fatalf("precondition: expected an authentication rejection before deployment, got: %v", err)
+	} else if !strings.Contains(err.Error(), "publickey") {
+		t.Fatalf("precondition: sshd did not offer publickey authentication for this account, so a key login cannot be tested: %v", err)
+	}
+
+	if err := DeployKey(client, pubLine, false); err != nil {
+		t.Fatalf("key deployment failed: %v", err)
+	}
+
+	keyClient, err := dialKeyOnly(env, signer)
+	if err != nil {
+		t.Fatalf("login with the deployed key failed (the key was likely written to a file sshd does not read): %v", err)
+	}
+	defer keyClient.Close()
+
+	// 鍵認証のセッションでコマンドが動き、同じアカウントとしてログインしていること。
+	out, err := runRemotePowerShell(keyClient, "Write-Output \"KEYAUTH_USER:$env:USERNAME\"")
+	if err != nil {
+		t.Fatalf("remote command over the key-authenticated session failed: %v", err)
+	}
+	if got, want := markerValue(out, "KEYAUTH_USER:"), sessionUserName(env.user); !strings.EqualFold(got, want) {
+		t.Errorf("key-authenticated session runs as %q, want %q\noutput:\n%s", got, want, out)
+	}
 }
 
 func TestIntegration_DeployKey(t *testing.T) {
@@ -155,10 +281,7 @@ func TestIntegration_DeployKey(t *testing.T) {
 	defer client.Close()
 
 	// 鍵ファイルを書き換えるテストは、すべて排他付きで退避してから始め、終了時に元へ戻す。
-	target, err := resolveKeyFileTarget(client)
-	if err != nil {
-		t.Fatalf("resolveKeyFileTarget failed: %v", err)
-	}
+	target := resolveExpectedTarget(t, client)
 	restore := backupRemoteKeyFile(t, client, remoteKeyFileExpr(target.isAdmin))
 	defer restore()
 
@@ -189,10 +312,7 @@ func TestIntegration_DuplicateByBlob(t *testing.T) {
 	}
 	defer client.Close()
 
-	target, err := resolveKeyFileTarget(client)
-	if err != nil {
-		t.Fatalf("resolveKeyFileTarget failed: %v", err)
-	}
+	target := resolveExpectedTarget(t, client)
 	// 鍵の配置から option 行での上書きまで、すべて排他付きの退避の内側で行う。
 	keyFileExpr := remoteKeyFileExpr(target.isAdmin)
 	restore := backupRemoteKeyFile(t, client, keyFileExpr)
@@ -273,10 +393,7 @@ func TestIntegration_AppendToFileWithoutTrailingNewline(t *testing.T) {
 	}
 	defer client.Close()
 
-	target, err := resolveKeyFileTarget(client)
-	if err != nil {
-		t.Fatalf("resolveKeyFileTarget failed: %v", err)
-	}
+	target := resolveExpectedTarget(t, client)
 
 	// $keyFile の決定は buildDeployScript と同じ式に合わせる。退避は排他付き
 	// （.ssh ディレクトリが無ければ退避スクリプトが作る。WriteAllText はディレクトリが無いと失敗する）。
@@ -341,10 +458,7 @@ func TestIntegration_ReapplyACLOnExistingKey(t *testing.T) {
 	}
 	defer client.Close()
 
-	target, err := resolveKeyFileTarget(client)
-	if err != nil {
-		t.Fatalf("resolveKeyFileTarget failed: %v", err)
-	}
+	target := resolveExpectedTarget(t, client)
 
 	// $keyFile / $sshDir の決定は buildDeployScript と同じ式に合わせる（$sshDir は $keyFile の親）。
 	keyFileExpr := remoteKeyFileExpr(target.isAdmin)

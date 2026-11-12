@@ -3,7 +3,8 @@
 # 統合テストは2つの env ファイルから認証情報を読み込む（いずれも gitignore 済み）:
 #   .env.integration       … 管理者アカウント (例: pushadmin)
 #   .env.integration.user  … 一般アカウント   (例: pushuser)
-# 各ファイルは `export SSH_TEST_HOST=... / SSH_TEST_USER=... / SSH_TEST_PASSWORD=...` を定義する。
+# 各ファイルは `export SSH_TEST_HOST=... / SSH_TEST_USER=... / SSH_TEST_PASSWORD=...` と、
+# 配置先の期待値 `export SSH_TEST_EXPECT_KEYFILE=admin|user`（ホストの sshd_config から決める）を定義する。
 # ターゲットが自分でファイルを読み込むため、手動 `source` は不要。
 
 .PHONY: build vet test itest itest-admin itest-user itest-all check help
@@ -40,7 +41,7 @@ itest-all: itest-admin itest-user
 define run_itest
 	if [ ! -f $(1) ]; then \
 		echo "ERROR: $(1) がありません（$(2)アカウント用の認証情報）。"; \
-		echo "  export SSH_TEST_HOST=127.0.0.1 / SSH_TEST_USER=... / SSH_TEST_PASSWORD=... を記述してください。"; \
+		echo "  export SSH_TEST_HOST=127.0.0.1 / SSH_TEST_USER=... / SSH_TEST_PASSWORD=... / SSH_TEST_EXPECT_KEYFILE=admin|user を記述してください。"; \
 		echo "  パスワードは op://<vault>/<item>/<field> 形式の 1Password 参照でも可（op CLI 必須）。"; \
 		exit 1; \
 	fi; \
@@ -57,6 +58,7 @@ define run_itest
 		: "$${SSH_TEST_HOST:?$(1) に SSH_TEST_HOST が未定義}"; \
 		: "$${SSH_TEST_USER:?$(1) に SSH_TEST_USER が未定義}"; \
 		: "$${SSH_TEST_PASSWORD:?$(1) に SSH_TEST_PASSWORD が未定義}"; \
+		: "$${SSH_TEST_EXPECT_KEYFILE:?$(1) に SSH_TEST_EXPECT_KEYFILE が未定義（admin か user）}"; \
 		echo "=> 統合テスト（$(2): $$SSH_TEST_USER@$$SSH_TEST_HOST）"; \
 		go test -tags=integration -count=1 -v $(if $(RUN),-run "$(RUN)",) ./...; \
 	fi
