@@ -27,7 +27,9 @@ import (
 //   - 中断の跡（.pushkey-test-* が残っている）があれば何も変えずに止め、手動での確認を求める
 //   - 「元々ファイルが無い」ことは推測せず、.pushkey-test-absent-<id> の目印で記録する
 //   - 復元は退避の「内容」を既存の鍵ファイルへ書き戻す（Move-Item で置き換えない）。置き換えると
-//     Copy-Item で作った退避ファイルの ACL（親から継承＋作成者既定の ACE）が鍵ファイルに残るため
+//     Copy-Item で作った退避ファイルの ACL（親から継承＋作成者既定の ACE）が鍵ファイルに残るため。
+//     既存ファイルは FileMode.Truncate で開く（WriteAllBytes の FileMode.Create は Hidden 属性の
+//     ファイルで UnauthorizedAccessException になる）
 //   - 復元できたときだけロックを外す。退避も目印も無ければ本体に触らず、ロックも残して次の実行を止める
 
 const (
@@ -115,7 +117,13 @@ func buildFixtureRestoreScript(keyFileExpr, id string) string {
 	return "$ErrorActionPreference = 'Stop'\n" +
 		fixturePathsExpr(keyFileExpr, id) +
 		`if (Test-Path -LiteralPath $bak) {
-  [System.IO.File]::WriteAllBytes($keyFile, [System.IO.File]::ReadAllBytes($bak))
+  $bytes = [System.IO.File]::ReadAllBytes($bak)
+  if (Test-Path -LiteralPath $keyFile) {
+    $fs = [System.IO.File]::Open($keyFile, [System.IO.FileMode]::Truncate, [System.IO.FileAccess]::Write)
+    try { $fs.Write($bytes, 0, $bytes.Length) } finally { $fs.Close() }
+  } else {
+    [System.IO.File]::WriteAllBytes($keyFile, $bytes)
+  }
   Remove-Item -LiteralPath $bak -Force
   Write-Output 'FIXTURE_RESTORED:backup'
 } elseif (Test-Path -LiteralPath $absent) {
@@ -181,7 +189,7 @@ func TestBuildFixtureRestoreScript(t *testing.T) {
 
 	for _, want := range []string{
 		`$keyFile = Join-Path $env:USERPROFILE '.ssh\authorized_keys'`,
-		"[System.IO.File]::WriteAllBytes($keyFile, [System.IO.File]::ReadAllBytes($bak))",
+		"[System.IO.FileMode]::Truncate",
 		"Remove-Item -LiteralPath $bak -Force",
 		"Write-Output 'FIXTURE_RESTORED:backup'",
 		"Write-Output 'FIXTURE_RESTORED:absent'",

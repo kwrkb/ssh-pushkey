@@ -350,9 +350,15 @@ func TestIntegration_ReapplyACLOnExistingKey(t *testing.T) {
 	keyFileExpr := remoteKeyFileExpr(target.isAdmin)
 	pathExpr := keyFileExpr + "; $sshDir = Split-Path -Parent $keyFile"
 
+	// 鍵の配置から ACL の破壊・修復まで、すべて排他付きの退避の内側で行う。
+	restore := backupRemoteKeyFile(t, client, keyFileExpr)
+	defer restore()
+
 	// 後始末: DeployKey が修復できなかった場合でも、ディレクトリと鍵ファイルの継承を外して
 	// 3 SID に戻す（崩れたまま残すと sshd が鍵ファイルを拒否し得る）。
-	// defer は LIFO なので、下で登録する鍵ファイルの復元が先に走り、その後にこの ACL 修復が走る。
+	// 退避（ロック取得）より後に登録する。defer は LIFO なので、この ACL 修復はロックを持ったまま
+	// 鍵ファイルの内容の復元より先に走る。退避がロック中や中断の跡で t.Fatalf した場合は登録されず、
+	// 他の実行のファイルに触らない。
 	defer func() {
 		restore := pathExpr + "; $sid = ([System.Security.Principal.WindowsIdentity]::GetCurrent()).User.Value" +
 			"; foreach ($p in @($sshDir, $keyFile)) { icacls $p /inheritance:r /grant '*S-1-5-18:(F)' /grant '*S-1-5-32-544:(F)' /grant \"*${sid}:(F)\" | Out-Null }"
@@ -360,10 +366,6 @@ func TestIntegration_ReapplyACLOnExistingKey(t *testing.T) {
 			t.Errorf("failed to restore ACL (manual cleanup may be required): %v", rerr)
 		}
 	}()
-
-	// 鍵の配置から ACL の破壊・修復まで、すべて排他付きの退避の内側で行う。
-	restore := backupRemoteKeyFile(t, client, keyFileExpr)
-	defer restore()
 
 	// 鍵を配置済みの状態にする（既にあれば重複扱い）
 	if err := DeployKey(client, pubKey, false); err != nil {
