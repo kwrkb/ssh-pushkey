@@ -11,6 +11,7 @@ Windows OpenSSH サーバーへ SSH 公開鍵を配置する CLI ツール（`ss
 - `deploy.go` — 鍵配置ロジック（Admin 判定、スクリプト生成、ACL 設定）
 - `*_test.go` — ユニットテスト（`main_test.go` / `ssh_test.go` / `deploy_test.go` / `hostkey_verification_test.go`）
 - `integration_test.go` — 統合テスト（`//go:build integration`、実機 Windows SSH 必要）
+- `integration_fixture_test.go` — 統合テストが鍵ファイルを退避・復元するスクリプトの生成（ロック・実行ごとの退避名）と、そのユニットテスト（build tag なし）
 - `docs/` — 検証記録（`match-address-verification.md`）
 
 ## 開発コマンド

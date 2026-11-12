@@ -15,12 +15,13 @@ ssh-pushkey/
 ├── deploy.go            # 鍵配置ロジック（Admin 判定、ACL、重複チェック）
 ├── *_test.go            # ユニットテスト
 ├── integration_test.go  # 統合テスト（build tag: integration）
+├── integration_fixture_test.go  # 統合テスト用の鍵ファイル退避・復元（ロック付き）
 └── docs/                # 検証記録（match-address-verification.md）
 ```
 
 ## 現在地
 
-**v1.9.1 リリース済み（2026-10-31）。未着手のフェーズなし。**
+**v1.9.1 リリース済み（2026-10-31）。品質監査 #33 の対応が進行中（下記）。**
 
 Step 1〜12（初期実装 / ACL 準拠 / ホスト鍵検証 / 全体レビュー対応 / 信頼性向上）および
 Issue #4・#16・#17 は完了。`CHANGELOG.md` に各リリースの内容、`LESSONS.md` に判断の記録がある。
@@ -28,6 +29,16 @@ Issue #4・#16・#17 は完了。`CHANGELOG.md` に各リリースの内容、`L
 
 開発環境も整備済み: `Makefile` が正規の入口、統合テストは 2 アカウント（管理者 / 一般）で実行可能、
 GitHub Actions の CI が PR / master push で `make check` 相当を実行する。
+
+### 進行中: 品質監査 Issue #33（AUD-001〜007）
+
+v1.9.1 以降の修正は未リリース（`CHANGELOG.md` の Unreleased）。進捗の詳細は #33 のコメント。
+
+- [x] AUD-001 / 002 / 006 / 007（PR #34 / MR !30）
+- [x] AUD-004 統合テストの鍵ファイル退避をロックと実行ごとの退避名で守る（PR #35 / MR !31）
+- [ ] AUD-005 配置先を外部の期待値と照合し、配置した鍵で再接続する（PR #36 / MR !32 でマージ済み。
+      `administrators_authorized_keys` 側は実機で通らない環境のため未検証で、完了扱いにしない）
+- [ ] AUD-003 `sshd -T` がグループを解決できないまま終了コード 0 を返すかを実機で確認（次に着手）
 
 ## 次のフェーズ候補
 
