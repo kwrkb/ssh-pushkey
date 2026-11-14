@@ -76,6 +76,9 @@ Match User pushadmin
 - **`Match Group administrators` は使わない。** Windows のオフライン `sshd -T -C user=...` 評価では
   グループ解決ができず（`ga_init, unable to resolve user` 警告が出る）、Match Group が発火しない。
   代わりに **`Match User pushadmin`**（文字列マッチでグループ解決不要）を使う。
+  （2026-11-14 追記: OpenSSH 10.0p2 で、SSH 接続した管理者セッションから同梱の
+  `sshd_config_default` を `sshd -T -f` で評価したときは、警告が出ず Match Group が発火した。
+  上の挙動が起きる条件は未特定。Issue #33 のクローズ時コメントを参照）
 - `User`（アカウント名）と `Group`（グループ名）は別物。`Match Group pushadmin` と書くと
   「pushadmin というグループ」を探して当たらないので注意。
 
