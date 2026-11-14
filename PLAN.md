@@ -35,7 +35,6 @@ GitHub Actions の CI が PR / master push で `make check` 相当を実行す�
 修正（PR #34〜#36）は v1.9.2 に含まれる。項目ごとの最終状態と
 開き直す条件は #33 のクローズ時コメント、判断の経緯は `LESSONS.md` にある。
 
-- v1.9.2 のタグで、両 CI の `govulncheck` ゲート（AUD-007）が実際に動いたかをログで確かめる
 - 確かめていないまま閉じたもの: `administrators_authorized_keys` 側への配置と鍵ログイン（AUD-005）、
   `sshd -T` がグループを解決できない条件（AUD-003。OpenSSH 10.0p2 では再現せず）。
   使い捨ての Windows ホストが用意できたら再開する
