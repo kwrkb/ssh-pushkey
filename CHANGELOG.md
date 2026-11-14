@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.9.2] - 2026-11-14
+
 ### Added
 
 - Integration tests now check that a deployed key actually works and that the key file was chosen correctly. `TestIntegration_KeyAuthAfterDeploy` generates a one-time ed25519 key in memory, confirms the host rejects it, deploys it, and then logs in again using only that key. Previously every integration test logged in with the password, and the tests that inspect the key file picked the file from the same decision they were meant to check, so a key written to a file sshd does not read still passed. The new required variable `SSH_TEST_EXPECT_KEYFILE` (`admin` or `user`) states which file sshd uses for the test account; Every integration test that reads or writes the key file now gets the target through a check against this value, and stops before touching the file when the tool's decision differs from it or the variable is not set. `make itest-*` also stops early when the variable is missing from the env file.
@@ -242,7 +244,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Duplicate key detection
 - PowerShell remote execution via `-EncodedCommand` (UTF-16LE Base64)
 
-[Unreleased]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.9.1...HEAD
+[Unreleased]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.9.2...HEAD
+[1.9.2]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.9.1...v1.9.2
 [1.9.1]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.9.0...v1.9.1
 [1.9.0]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.8.3...v1.9.0
 [1.8.3]: https://gitlab.com/kwrkb/ssh-pushkey/-/compare/v1.8.2...v1.8.3
