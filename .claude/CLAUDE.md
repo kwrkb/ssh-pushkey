@@ -12,7 +12,7 @@ Windows OpenSSH サーバーへ SSH 公開鍵を配置する CLI ツール（`ss
 - `*_test.go` — ユニットテスト（`main_test.go` / `ssh_test.go` / `deploy_test.go` / `hostkey_verification_test.go`）
 - `integration_test.go` — 統合テスト（`//go:build integration`、実機 Windows SSH 必要）
 - `integration_fixture_test.go` — 統合テストが鍵ファイルを退避・復元するスクリプトの生成（ロック・実行ごとの退避名）と、そのユニットテスト（build tag なし）
-- `docs/` — 検証記録（`match-address-verification.md`）
+- `docs/` — 検証記録（`match-address-verification.md`）と、管理者用の配置先を通す Windows 11 仮想マシンの構築手順（`windows11-vm-test-env.md`）
 
 ## 開発コマンド
 
