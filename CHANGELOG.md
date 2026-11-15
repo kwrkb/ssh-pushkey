@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Deploying a key for a standard user no longer makes the other files in `.ssh` unreadable. The tool removes inheritance from `.ssh` and grants SYSTEM, Administrators and the user full control, but those grants were not inheritable. When `.ssh` still inherited its ACL from the user profile (the usual state before the first deployment), every file already in it, such as `known_hosts`, `config` or a private key, lost all of its ACEs, and even its owner could no longer read it. The three grants on a standard user's `.ssh` are now inheritable, so existing files keep access for the same three principals. The administrators path (`C:\ProgramData\ssh`) is unchanged: it already carries inheritable ACEs from the OpenSSH installation, and making the grants inheritable there would spread the deploying administrator's ACE to the files there that inherit their ACL, such as `sshd_config`. If an earlier version left a file unreadable, its owner can restore access with `icacls <file> /grant <user>:F`.
+
+### Added
+
+- `TestIntegration_ExistingFilesStayReadable` places a file next to the key file before deploying and checks that it can still be read afterwards. It only exercises the bug above when the account's `.ssh` does not exist yet or still inherits its ACL.
+
 ## [1.9.2] - 2026-11-14
 
 ### Added
