@@ -540,12 +540,19 @@ func TestIntegration_ReapplyACLOnExistingKey(t *testing.T) {
 
 	// 後始末: DeployKey が修復できなかった場合でも、ディレクトリと鍵ファイルの継承を外して
 	// 3 SID に戻す（崩れたまま残すと sshd が鍵ファイルを拒否し得る）。
+	// 付ける ACE は buildDeployScript と同じにする（一般ユーザー側のディレクトリだけ (OI)(CI)）。
+	// 継承しない (F) を足すと、配置処理が付けた (OI)(CI)(F) と重複して残る。
 	// 退避（ロック取得）より後に登録する。defer は LIFO なので、この ACL 修復はロックを持ったまま
 	// 鍵ファイルの内容の復元より先に走る。退避がロック中や中断の跡で t.Fatalf した場合は登録されず、
 	// 他の実行のファイルに触らない。
+	dirAce := "(OI)(CI)(F)"
+	if target.isAdmin {
+		dirAce = "(F)"
+	}
 	defer func() {
 		restore := pathExpr + "; $sid = ([System.Security.Principal.WindowsIdentity]::GetCurrent()).User.Value" +
-			"; foreach ($p in @($sshDir, $keyFile)) { icacls $p /inheritance:r /grant '*S-1-5-18:(F)' /grant '*S-1-5-32-544:(F)' /grant \"*${sid}:(F)\" | Out-Null }"
+			fmt.Sprintf("; icacls $sshDir /inheritance:r /grant '*S-1-5-18:%[1]s' /grant '*S-1-5-32-544:%[1]s' /grant \"*${sid}:%[1]s\" | Out-Null", dirAce) +
+			"; icacls $keyFile /inheritance:r /grant '*S-1-5-18:(F)' /grant '*S-1-5-32-544:(F)' /grant \"*${sid}:(F)\" | Out-Null"
 		if _, rerr := runRemotePowerShell(client, restore); rerr != nil {
 			t.Errorf("failed to restore ACL (manual cleanup may be required): %v", rerr)
 		}
