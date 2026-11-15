@@ -16,12 +16,13 @@ ssh-pushkey/
 ├── *_test.go            # ユニットテスト
 ├── integration_test.go  # 統合テスト（build tag: integration）
 ├── integration_fixture_test.go  # 統合テスト用の鍵ファイル退避・復元（ロック付き）
-└── docs/                # 検証記録（match-address-verification.md）
+└── docs/                # 検証記録（match-address-verification.md）、検証用仮想マシンの構築手順（windows11-vm-test-env.md）
 ```
 
 ## 現在地
 
-**v1.9.2 リリース済み（2026-11-14）。品質監査 #33 の修正を含む。未着手のフェーズなし。**
+**v1.9.2 リリース済み（2026-11-14）。品質監査 #33 の修正を含む。
+検証用仮想マシンで、一般ユーザー側の `.ssh` の ACL 不具合が見つかった（下記）。**
 
 Step 1〜12（初期実装 / ACL 準拠 / ホスト鍵検証 / 全体レビュー対応 / 信頼性向上）および
 Issue #4・#16・#17 は完了。`CHANGELOG.md` に各リリースの内容、`LESSONS.md` に判断の記録がある。
@@ -35,9 +36,21 @@ GitHub Actions の CI が PR / master push で `make check` 相当を実行す�
 修正（PR #34〜#36）は v1.9.2 に含まれる。項目ごとの最終状態と
 開き直す条件は #33 のクローズ時コメント、判断の経緯は `LESSONS.md` にある。
 
-- 確かめていないまま閉じたもの: `administrators_authorized_keys` 側への配置と鍵ログイン（AUD-005）、
-  `sshd -T` がグループを解決できない条件（AUD-003。OpenSSH 10.0p2 では再現せず）。
-  使い捨ての Windows ホストが用意できたら再開する
+- 確かめていないまま閉じたもの: `sshd -T` がグループを解決できない条件（AUD-003。OpenSSH 10.0p2 では再現せず）
+- `administrators_authorized_keys` 側への配置と鍵ログイン（AUD-005）は、2026-11-14 に検証用仮想マシン
+  （Windows 11 Pro、OpenSSH_for_Windows_9.5、既定の `sshd_config`）で統合テストが全件 PASS し、確認済み。
+  構築手順と記録は `docs/windows11-vm-test-env.md`
+
+### 一般ユーザー側の `.ssh` の ACL 不具合（2026-11-14 発見、未修正）
+
+配置処理は `.ssh` に `icacls /inheritance:r` と継承しない ACE を付ける。`.ssh` が親から ACE を継承していた場合、
+中の既存ファイル（`known_hosts`・`config`・秘密鍵など）の ACE がすべて消え、持ち主も読めなくなる。
+検証用仮想マシンで、テストが触れないダミーの `known_hosts` を置いて再現した。
+`C:\ProgramData\ssh` は最初から継承できる ACE を明示的に持つため、管理者側では起きない。
+
+- [ ] 一般ユーザー側で、`.ssh` の既存ファイルが配置後も持ち主に読めること
+- [ ] 管理者側の `C:\ProgramData\ssh`（ホスト鍵・`sshd_config`）の ACL と sshd の動作が変わらないこと
+- [ ] 検証用仮想マシンで、`.ssh` が無い状態から両アカウントの統合テストが通ること
 
 ## 次のフェーズ候補
 
