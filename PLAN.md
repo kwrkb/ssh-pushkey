@@ -22,7 +22,7 @@ ssh-pushkey/
 ## 現在地
 
 **v1.9.2 リリース済み（2026-11-14）。品質監査 #33 の修正を含む。
-検証用仮想マシンで、一般ユーザー側の `.ssh` の ACL 不具合が見つかった（下記）。**
+検証用仮想マシンで見つかった一般ユーザー側の `.ssh` の ACL 不具合は master で修正済み、未リリース（下記）。**
 
 Step 1〜12（初期実装 / ACL 準拠 / ホスト鍵検証 / 全体レビュー対応 / 信頼性向上）および
 Issue #4・#16・#17 は完了。`CHANGELOG.md` に各リリースの内容、`LESSONS.md` に判断の記録がある。
@@ -41,16 +41,20 @@ GitHub Actions の CI が PR / master push で `make check` 相当を実行す�
   （Windows 11 Pro、OpenSSH_for_Windows_9.5、既定の `sshd_config`）で統合テストが全件 PASS し、確認済み。
   構築手順と記録は `docs/windows11-vm-test-env.md`
 
-### 一般ユーザー側の `.ssh` の ACL 不具合（2026-11-14 発見、未修正）
+### 一般ユーザー側の `.ssh` の ACL 不具合（2026-11-14 発見、PR #40 で修正、未リリース）（完了）
 
 配置処理は `.ssh` に `icacls /inheritance:r` と継承しない ACE を付ける。`.ssh` が親から ACE を継承していた場合、
 中の既存ファイル（`known_hosts`・`config`・秘密鍵など）の ACE がすべて消え、持ち主も読めなくなる。
 検証用仮想マシンで、テストが触れないダミーの `known_hosts` を置いて再現した。
 `C:\ProgramData\ssh` は最初から継承できる ACE を明示的に持つため、管理者側では起きない。
 
-- [ ] 一般ユーザー側で、`.ssh` の既存ファイルが配置後も持ち主に読めること
-- [ ] 管理者側の `C:\ProgramData\ssh`（ホスト鍵・`sshd_config`）の ACL と sshd の動作が変わらないこと
-- [ ] 検証用仮想マシンで、`.ssh` が無い状態から両アカウントの統合テストが通ること
+一般ユーザー側の `.ssh` に付ける ACE だけを `(OI)(CI)` 付きにした。判断の経緯は `LESSONS.md`。
+
+- [x] 一般ユーザー側で、`.ssh` の既存ファイルが配置後も持ち主に読めること
+      （`TestIntegration_ExistingFilesStayReadable`。修正前のコードでは失敗することも確認）
+- [x] 管理者側の `C:\ProgramData\ssh`（ホスト鍵・`sshd_config`）の ACL と sshd の動作が変わらないこと
+      （チェックポイントに戻した状態の ACL と比べ、中のファイルは一致。ディレクトリ自体に継承しない ACE が付くのは修正前から同じ）
+- [x] 検証用仮想マシンで、`.ssh` が無い状態から両アカウントの統合テストが通ること（9 件ずつ全件 PASS）
 
 ## 次のフェーズ候補
 
