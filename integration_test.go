@@ -295,6 +295,76 @@ func TestIntegration_DeployKey(t *testing.T) {
 	}
 }
 
+// TestIntegration_ExistingFilesStayReadable は、鍵ファイルと同じディレクトリに元からあったファイル
+// （known_hosts・config・秘密鍵など）が、配置後も持ち主に読めることを確かめる。
+//
+// 配置はディレクトリの継承を外す。ディレクトリが継承できる ACE を持たないと、中のファイルが継承して
+// いた ACE がすべて消え、持ち主も読めなくなる（一般ユーザー側の .ssh で実際に起きた）。
+// この不具合が表に出るのは、配置前のディレクトリが親から ACE を継承している場合だけ。一度でも
+// 配置済みで継承が外れたディレクトリでは、新しいファイルは既定の ACL で作られるので、修正前でも通る。
+// 意味のある検証にするには、.ssh が無いアカウント（検証用仮想マシンをチェックポイントに戻した直後など）で回す。
+func TestIntegration_ExistingFilesStayReadable(t *testing.T) {
+	env := loadTestEnv(t)
+
+	pubKey, _, err := resolveKey(os.Getenv("SSH_TEST_PUBKEY"))
+	if err != nil {
+		t.Fatalf("failed to read public key: %v", err)
+	}
+
+	client, err := dialSSH(env.user, env.host, env.port, env.password, true)
+	if err != nil {
+		t.Fatalf("SSH connection failed: %v", err)
+	}
+	defer client.Close()
+
+	target := resolveExpectedTarget(t, client)
+	keyFileExpr := remoteKeyFileExpr(target.isAdmin)
+	restore := backupRemoteKeyFile(t, client, keyFileExpr)
+	defer restore()
+
+	// 退避（ディレクトリが無ければ作る）の後に、鍵ファイルの隣へ既存ファイルの代わりを置く。
+	// id は hex のみなので引用符のエスケープは不要。
+	sibling := keyFileExpr + "\n" +
+		fmt.Sprintf("$sibling = Join-Path (Split-Path -Parent $keyFile) 'pushkey-test-sibling-%s'\n", newFixtureID(t))
+	out, err := runRemotePowerShell(client, sibling+
+		"[System.IO.File]::WriteAllText($sibling, 'SIBLING_CONTENT')\n"+
+		"Write-Output \"SIBLING_CREATED:$sibling\"\n")
+	if err != nil || !hasMarkerLine(out, "SIBLING_CREATED:") {
+		t.Fatalf("failed to create a sibling file next to the key file: %v\noutput:\n%s", err, out)
+	}
+	siblingPath := markerValue(out, "SIBLING_CREATED:")
+
+	// restore より先に走らせる（defer は LIFO）。ACE が消えていても持ち主は ACL を付け直せるので、
+	// 付け直してから消す。
+	defer func() {
+		out, err := runRemotePowerShell(client, sibling+
+			"if (Test-Path -LiteralPath $sibling) {\n"+
+			"  $sid = ([System.Security.Principal.WindowsIdentity]::GetCurrent()).User.Value\n"+
+			"  icacls $sibling /grant \"*${sid}:(F)\" | Out-Null\n"+
+			"  Remove-Item -LiteralPath $sibling -Force\n"+
+			"}\n"+
+			"if (Test-Path -LiteralPath $sibling) { Write-Output 'SIBLING_LEFT' } else { Write-Output 'SIBLING_REMOVED' }\n")
+		if err != nil || !hasMarkerLine(out, "SIBLING_REMOVED") {
+			t.Errorf("failed to remove the sibling file %s; delete it manually: %v\noutput:\n%s", siblingPath, err, out)
+		}
+	}()
+
+	if err := DeployKey(client, pubKey, false); err != nil {
+		t.Fatalf("key deployment failed: %v", err)
+	}
+
+	out, err = runRemotePowerShell(client, sibling+
+		"try { Write-Output (\"SIBLING_READ:\" + [System.IO.File]::ReadAllText($sibling)) }\n"+
+		"catch { Write-Output (\"SIBLING_DENIED:\" + $_.Exception.Message) }\n")
+	if err != nil {
+		t.Fatalf("failed to read back the sibling file: %v", err)
+	}
+	if got := markerValue(out, "SIBLING_READ:"); got != "SIBLING_CONTENT" {
+		t.Errorf("a file that already existed next to the key file became unreadable after deployment: %s\noutput:\n%s",
+			siblingPath, out)
+	}
+}
+
 // TestIntegration_DuplicateByBlob は blob 単位の重複判定（PowerShell 実行時挙動）を実機で検証する。
 // ユニットテストは生成スクリプトの文字列一致しか見られないため、実際の
 // Get-Content ループ / -split / -ceq 比較が意図通り動くかはここでしか確認できない。
@@ -470,12 +540,19 @@ func TestIntegration_ReapplyACLOnExistingKey(t *testing.T) {
 
 	// 後始末: DeployKey が修復できなかった場合でも、ディレクトリと鍵ファイルの継承を外して
 	// 3 SID に戻す（崩れたまま残すと sshd が鍵ファイルを拒否し得る）。
+	// 付ける ACE は buildDeployScript と同じにする（一般ユーザー側のディレクトリだけ (OI)(CI)）。
+	// 継承しない (F) を足すと、配置処理が付けた (OI)(CI)(F) と重複して残る。
 	// 退避（ロック取得）より後に登録する。defer は LIFO なので、この ACL 修復はロックを持ったまま
 	// 鍵ファイルの内容の復元より先に走る。退避がロック中や中断の跡で t.Fatalf した場合は登録されず、
 	// 他の実行のファイルに触らない。
+	dirAce := "(OI)(CI)(F)"
+	if target.isAdmin {
+		dirAce = "(F)"
+	}
 	defer func() {
 		restore := pathExpr + "; $sid = ([System.Security.Principal.WindowsIdentity]::GetCurrent()).User.Value" +
-			"; foreach ($p in @($sshDir, $keyFile)) { icacls $p /inheritance:r /grant '*S-1-5-18:(F)' /grant '*S-1-5-32-544:(F)' /grant \"*${sid}:(F)\" | Out-Null }"
+			fmt.Sprintf("; icacls $sshDir /inheritance:r /grant '*S-1-5-18:%[1]s' /grant '*S-1-5-32-544:%[1]s' /grant \"*${sid}:%[1]s\" | Out-Null", dirAce) +
+			"; icacls $keyFile /inheritance:r /grant '*S-1-5-18:(F)' /grant '*S-1-5-32-544:(F)' /grant \"*${sid}:(F)\" | Out-Null"
 		if _, rerr := runRemotePowerShell(client, restore); rerr != nil {
 			t.Errorf("failed to restore ACL (manual cleanup may be required): %v", rerr)
 		}

@@ -94,6 +94,49 @@ func TestBuildDeployScript_AclValidation(t *testing.T) {
 	}
 }
 
+// 一般ユーザー側の .ssh には継承できる ACE を付け、既存ファイルの ACE が継承を外した時点で
+// 空にならないようにする。管理者側の C:\ProgramData\ssh には付けない（管理者個人の ACE が
+// sshd_config など継承している中のファイルに広がるため）。鍵ファイルはファイルなので継承指定を付けない。
+func TestBuildDeployScript_DirAceInheritance(t *testing.T) {
+	pubKey := "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample user@host"
+	blob := "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample"
+
+	scriptLine := func(script, prefix string) string {
+		for _, line := range strings.Split(script, "\n") {
+			if strings.HasPrefix(line, prefix) {
+				return line
+			}
+		}
+		t.Fatalf("no line starts with %q\n\nscript:\n%s", prefix, script)
+		return ""
+	}
+
+	tests := []struct {
+		name        string
+		isAdmin     bool
+		wantInherit bool
+	}{
+		{"normal user dir inherits", false, true},
+		{"admin dir does not inherit", true, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			script := buildDeployScript(pubKey, blob, tt.isAdmin, false)
+			dirLine := scriptLine(script, "$aclOut = & icacls $sshDir /inheritance:r")
+			fileLine := scriptLine(script, "$fileAclOut = & icacls $keyFile /inheritance:r")
+
+			for _, ace := range []string{"'*S-1-5-18:(OI)(CI)(F)'", "'*S-1-5-32-544:(OI)(CI)(F)'", `"*${userSid}:(OI)(CI)(F)"`} {
+				if got := strings.Contains(dirLine, ace); got != tt.wantInherit {
+					t.Errorf("dir ACL contains %s = %v, want %v\nline: %s", ace, got, tt.wantInherit, dirLine)
+				}
+			}
+			if strings.Contains(fileLine, "(OI)") || strings.Contains(fileLine, "(CI)") {
+				t.Errorf("key file ACL must not carry inheritance flags\nline: %s", fileLine)
+			}
+		})
+	}
+}
+
 func TestBuildDeployScript_EscapesSingleQuotes(t *testing.T) {
 	pubKey := "ssh-ed25519 AAAAC3 it's a test"
 	script := buildDeployScript(pubKey, "ssh-ed25519 AAAAC3", false, false)

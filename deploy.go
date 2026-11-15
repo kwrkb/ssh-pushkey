@@ -106,9 +106,21 @@ if (Test-Path $keyFile) {
 	// 2>&1 でリダイレクトすると、icacls が stderr に書いた瞬間に NativeCommandError が終端エラーとして
 	// throw され、後続の $LASTEXITCODE チェック（マーカー出力）に到達しない。$LASTEXITCODE を明示的に
 	// 検査しているため Stop は不要。icacls 区間だけ Continue に落とし、マーカー出力を保証する。
+	//
+	// ディレクトリの継承を外すと、中の既存ファイルが継承していた ACE は、ディレクトリが持つ
+	// 「継承できる ACE」で置き換わる。一般ユーザー側で継承しない ACE だけを付けると、.ssh に
+	// 元からあった known_hosts・config・秘密鍵などの ACE が空になり、持ち主も読めなくなる。
+	// そのため一般ユーザー側の .ssh には (OI)(CI) を付け、同じ 3 主体を中のファイルにも継承させる。
+	// 管理者側の C:\ProgramData\ssh は OpenSSH のインストール時に継承できる ACE を明示的に持って
+	// おり、ここで (OI)(CI) を付けると、管理者個人の ACE が sshd_config など継承している中のファイルにまで広がる。
+	// 管理者側は従来どおり継承しない ACE だけを付ける。
+	dirAce := "(F)"
+	if !isAdmin {
+		dirAce = "(OI)(CI)(F)"
+	}
 	sb.WriteString("$ErrorActionPreference = 'Continue'\n")
 	sb.WriteString("$userSid = ([System.Security.Principal.WindowsIdentity]::GetCurrent()).User.Value\n")
-	sb.WriteString("$aclOut = & icacls $sshDir /inheritance:r /grant '*S-1-5-18:(F)' /grant '*S-1-5-32-544:(F)' /grant \"*${userSid}:(F)\" 2>&1\n")
+	sb.WriteString(fmt.Sprintf("$aclOut = & icacls $sshDir /inheritance:r /grant '*S-1-5-18:%[1]s' /grant '*S-1-5-32-544:%[1]s' /grant \"*${userSid}:%[1]s\" 2>&1\n", dirAce))
 	sb.WriteString("if ($LASTEXITCODE -ne 0) { Write-Output \"ACL_SET_FAILED_DIR|$aclOut\"; exit 1 }\n")
 	sb.WriteString("$fileAclOut = & icacls $keyFile /inheritance:r /grant '*S-1-5-18:(F)' /grant '*S-1-5-32-544:(F)' /grant \"*${userSid}:(F)\" 2>&1\n")
 	sb.WriteString("if ($LASTEXITCODE -ne 0) { Write-Output \"ACL_SET_FAILED_FILE|$fileAclOut\"; exit 1 }\n")
