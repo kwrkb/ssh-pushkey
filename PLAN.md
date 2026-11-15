@@ -48,6 +48,7 @@ GitHub Actions の CI が PR / master push で `make check` 相当を実行す�
 `C:\ProgramData\ssh` は最初から継承できる ACE を明示的に持つため、管理者側では起きない。
 
 一般ユーザー側の `.ssh` に付ける ACE だけを `(OI)(CI)` 付きにした。判断の経緯は `LESSONS.md`。
+以前の版で壊れたファイルの復旧手順（第一は v1.9.3 の再実行）は、2026-11-15 に仮想マシンで確認し、`CHANGELOG.md` の 1.9.3 に書いた。
 
 - [x] 一般ユーザー側で、`.ssh` の既存ファイルが配置後も持ち主に読めること
       （`TestIntegration_ExistingFilesStayReadable`。修正前のコードでは失敗することも確認）

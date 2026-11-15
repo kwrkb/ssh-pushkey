@@ -226,5 +226,6 @@ ACE が空のファイルも持ち主は ACL を付け直せるので、付け�
 | 2026-11-14 | `pushuser` | user | 3 件 PASS、5 件 FAIL（修正前のコード。上記の ACL 不具合） |
 | 2026-11-15 | `pushuser` | user | PR #40 のコードで、チェックポイントに戻した状態から 9 件すべて PASS |
 | 2026-11-15 | `pushadmin` | admin | PR #40 のコードで 9 件すべて PASS。`C:\ProgramData\ssh` の中のファイルの ACL はテスト前と一致 |
+| 2026-11-15 | `pushuser` | user | 統合テストではなく、以前の版で壊れたファイルの復旧手順の確認。v1.9.2 の配置スクリプトで `known_hosts`・`config`・継承したままの秘密鍵・サブフォルダーを読めなくし、復旧手順を 3 通り試した。v1.9.3 の再実行、`.ssh` への `(OI)(CI)` 付きの 1 行、ファイルごとの `/grant` のいずれでも、内容のハッシュは一致した。前の 2 つはサブフォルダーの中まで 1 回で戻った。Windows の `ssh-keygen` で作った秘密鍵は最初から壊れない。手順は `CHANGELOG.md` の 1.9.3 |
 
 環境: Windows 11 Pro（English）、OpenSSH_for_Windows_9.5、既定の `sshd_config`（管理者用ブロックは有効）。
