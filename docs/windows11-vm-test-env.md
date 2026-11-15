@@ -198,12 +198,16 @@ SSH_TEST_HOST=127.0.0.1 SSH_TEST_PORT=22022 SSH_TEST_USER=pushuser \
 - 2 つのアカウントをシェルのループで回すときは、zsh では `set -- $var` で単語が分割されない点に注意する。
   分割されないと `SSH_TEST_USER` に「pushadmin admin」のような存在しないユーザー名が入り、認証で全件失敗する。
 
-### 一般アカウントでの既知の失敗（2026-11-14 時点）
+### `.ssh` が無い状態から回す意味
 
-`pushuser` の `.ssh` が無い状態（チェックポイント `clean-ssh` に戻した直後など）からテストを回すと、
-`TestIntegration_KeyAuthAfterDeploy` が鍵ファイルの復元で失敗し、後続のテストがロックファイルで止まる。
-配置処理が `.ssh` の継承を外すときに、中にあった退避用の目印とロックのファイルから ACE がすべて消えるためで、
-テストではなく製品側の不具合（既存の `known_hosts` なども読めなくなる）。直るまでは、失敗した後に `pushuser` で次を実行して片付ける。
+`TestIntegration_ExistingFilesStayReadable` は、`.ssh` が親から ACE を継承している場合だけ意味のある検証になる。
+`pushuser` の `.ssh` が無い状態（チェックポイント `clean-ssh` に戻した直後など）から回すこと。
+一度配置して継承が外れた `.ssh` では、修正前のコードでも通ってしまう。
+
+修正前のコード（v1.9.2 まで）では、この状態から回すと `TestIntegration_KeyAuthAfterDeploy` が鍵ファイルの復元で失敗し、
+後続のテストがロックファイルで止まった。配置処理が `.ssh` の継承を外すときに、中にあった退避用の目印とロックのファイルから
+ACE がすべて消えたためで、製品側の不具合だった（既存の `known_hosts` なども読めなくなっていた。PR #40 で修正）。
+古いコードで回して同じ状態になったら、`pushuser` で次を実行して片付ける。
 
 ```powershell
 $d = Join-Path $env:USERPROFILE ".ssh"
@@ -219,6 +223,8 @@ ACE が空のファイルも持ち主は ACL を付け直せるので、付け�
 | 日付 | アカウント | 期待値 | 結果 |
 |---|---|---|---|
 | 2026-11-14 | `pushadmin` | admin | 8 件すべて PASS。`administrators_authorized_keys` への配置と、その鍵での認証を実機で初めて確認 |
-| 2026-11-14 | `pushuser` | user | 3 件 PASS、5 件 FAIL（上記の既知の失敗） |
+| 2026-11-14 | `pushuser` | user | 3 件 PASS、5 件 FAIL（修正前のコード。上記の ACL 不具合） |
+| 2026-11-15 | `pushuser` | user | PR #40 のコードで、チェックポイントに戻した状態から 9 件すべて PASS |
+| 2026-11-15 | `pushadmin` | admin | PR #40 のコードで 9 件すべて PASS。`C:\ProgramData\ssh` の中のファイルの ACL はテスト前と一致 |
 
 環境: Windows 11 Pro（English）、OpenSSH_for_Windows_9.5、既定の `sshd_config`（管理者用ブロックは有効）。
