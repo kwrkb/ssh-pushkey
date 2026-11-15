@@ -11,7 +11,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
-- Deploying a key for a standard user no longer makes the other files in `.ssh` unreadable. The tool removes inheritance from `.ssh` and grants SYSTEM, Administrators and the user full control, but those grants were not inheritable. When `.ssh` still inherited its ACL from the user profile (the usual state before the first deployment), every file already in it, such as `known_hosts`, `config` or a private key, lost all of its ACEs, and even its owner could no longer read it. The three grants on a standard user's `.ssh` are now inheritable, so existing files keep access for the same three principals. The administrators path (`C:\ProgramData\ssh`) is unchanged: it already carries inheritable ACEs from the OpenSSH installation, and making the grants inheritable there would spread the deploying administrator's ACE to the files there that inherit their ACL, such as `sshd_config`. If an earlier version left a file unreadable, its owner can restore access with `icacls <file> /grant <user>:F`.
+- Deploying a key for a standard user no longer makes the other files in `.ssh` unreadable. The tool removes inheritance from `.ssh` and grants SYSTEM, Administrators and the user full control, but those grants were not inheritable. When `.ssh` still inherited its ACL from the user profile (the usual state before the first deployment), every file already in it, such as `known_hosts`, `config` or a private key, lost all of its ACEs, and even its owner could no longer read it. The three grants on a standard user's `.ssh` are now inheritable, so existing files keep access for the same three principals. The administrators path (`C:\ProgramData\ssh`) is unchanged: it already carries inheritable ACEs from the OpenSSH installation, and making the grants inheritable there would spread the deploying administrator's ACE to the files there that inherit their ACL, such as `sshd_config`.
+
+  To repair files that an earlier version left unreadable, run this version once more against the same host and user with the same key, without `--dry-run`. It reports `Key already exists in …, permissions re-applied`, and the inheritable grants on `.ssh` restore access to every file below it, including files in subdirectories. File contents are not changed. A private key created on the server by Windows `ssh-keygen` is not affected in the first place, because `ssh-keygen` gives it its own ACL. If you cannot run the tool, the affected user can do the same repair on the server in `cmd.exe`:
+
+  ```
+  icacls %USERPROFILE%\.ssh /grant *S-1-5-18:(OI)(CI)F /grant *S-1-5-32-544:(OI)(CI)F /grant %USERNAME%:(OI)(CI)F
+  ```
+
+  In PowerShell, quote each grant, for example `'*S-1-5-18:(OI)(CI)F'` and `"${env:USERNAME}:(OI)(CI)F"`. Unquoted, `$env:USERNAME:F` makes `icacls` fail with an invalid parameter error. Granting access file by file with `icacls <file> /grant <user>:F` also works, but it restores only the owner's access, not SYSTEM's or Administrators', and a subdirectory has to be granted before the files in it.
 
 ### Added
 
